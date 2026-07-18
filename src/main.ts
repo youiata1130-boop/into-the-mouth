@@ -40,6 +40,7 @@ type GameEffect = {
 type TryEndReason = "parent-close" | "escape" | "poison-timeout";
 type GameMode = "pvp" | "cpu" | "online";
 type OnlineRole = "none" | "host" | "guest";
+type CpuDifficulty = "easy" | "normal" | "hard";
 type OnlineLobbyMember = { playerId: string; name: string; isHost: boolean };
 type OnlineGameState = {
   playerCount: number;
@@ -64,6 +65,7 @@ let hasStarted = false;
 let gameMode: GameMode = "cpu";
 let modeSetupOpen = false;
 let pendingGameMode: GameMode = "cpu";
+let cpuDifficulty: CpuDifficulty = "normal";
 let onlineLobbyOpen = false;
 let onlineRole: OnlineRole = "none";
 let onlinePeer: Peer | null = null;
@@ -135,6 +137,13 @@ appRoot.addEventListener("click", (event) => {
   if (countButton) {
     draftPlayerCount = Number(countButton.dataset.playerCount);
     if (draftParentIndex >= draftPlayerCount) draftParentIndex = 0;
+    render();
+    return;
+  }
+
+  const difficultyButton = target.closest<HTMLButtonElement>("button[data-cpu-difficulty]");
+  if (difficultyButton) {
+    cpuDifficulty = difficultyButton.dataset.cpuDifficulty as CpuDifficulty;
     render();
     return;
   }
@@ -954,7 +963,7 @@ function scheduleNpcAutomation(): void {
         if (!isGameOver && !isTryEnded && !isMouthOpen && isNpcParent()) {
           openMouth();
         }
-      }, randomInt(900, 1600));
+      }, getCpuDelay("open"));
     }
 
     return;
@@ -983,23 +992,23 @@ function scheduleNpcParentAction(): void {
     npcParentTimerId = window.setTimeout(() => {
       if (!isMouthOpen || isTryEnded || isGameOver || !isNpcParent() || !activePoison) return;
 
-      if (Math.random() < 0.78) {
+      if (Math.random() < getCpuPoisonRemovalChance()) {
         removeActivePoison();
       } else {
         closeMouth();
       }
-    }, randomInt(650, 1250));
+    }, getCpuDelay("poison"));
     return;
   }
 
   if (npcParentCloseAt === null) {
-    npcParentCloseAt = Date.now() + randomInt(5600, 9400);
+    npcParentCloseAt = Date.now() + getCpuDelay("close");
   }
 
   const availableScore = getParentCloseTotal();
 
-  if (availableScore >= 8) {
-    npcParentCloseAt = Math.min(npcParentCloseAt, Date.now() + randomInt(1100, 2100));
+  if (availableScore >= getCpuCloseScore()) {
+    npcParentCloseAt = Math.min(npcParentCloseAt, Date.now() + getCpuDelay("secure"));
   }
 
   npcParentTimerId = window.setTimeout(() => {
@@ -1037,7 +1046,7 @@ function scheduleNpcChildAction(): void {
     }
 
     scheduleNpcAutomation();
-  }, randomInt(1100, 2600));
+  }, getCpuDelay("child"));
 }
 
 function chooseNpcChildAction(player: Player): { type: "play" | "escape"; slotIndex: number } | null {
@@ -1049,7 +1058,8 @@ function chooseNpcChildAction(player: Player): { type: "play" | "escape"; slotIn
     const shouldSecureSix = candidate.value === 6 && candidateTotal > 0;
     const escapeChance = shouldSecureSix ? 0.94 : candidateTotal >= 6 ? 0.82 : candidateTotal >= 3 ? 0.58 : 0.28;
 
-    if (Math.random() < escapeChance) {
+    const difficultyMultiplier = cpuDifficulty === "easy" ? 0.62 : cpuDifficulty === "hard" ? 1.15 : 1;
+    if (Math.random() < Math.min(0.98, escapeChance * difficultyMultiplier)) {
       return { type: "escape", slotIndex: escapeSlot };
     }
   }
@@ -1086,12 +1096,13 @@ function chooseNpcChildAction(player: Player): { type: "play" | "escape"; slotIn
 
     if (usefulFish.length > 0) {
       // 少しだけ判断を揺らし、毎回完全な最善手を即座に選ぶCPUにはしない。
-      const choice = usefulFish.length > 1 && Math.random() < 0.14 ? usefulFish[1] : usefulFish[0];
+      const mistakeChance = cpuDifficulty === "easy" ? 0.44 : cpuDifficulty === "hard" ? 0.03 : 0.14;
+      const choice = usefulFish.length > 1 && Math.random() < mistakeChance ? usefulFish[1] : usefulFish[0];
       return { type: "play", slotIndex: choice.slotIndex };
     }
 
     // 得点につながらない魚は温存する。まれな見落としだけを人間らしさとして残す。
-    if (Math.random() < 0.06) {
+    if (Math.random() < (cpuDifficulty === "easy" ? 0.2 : cpuDifficulty === "hard" ? 0.01 : 0.06)) {
       return { type: "play", slotIndex: rankedFish[0].slotIndex };
     }
   }
@@ -1113,9 +1124,28 @@ function shouldPlayPoisonNow(): boolean {
   const mouthHasBeenOpenLongEnough = mouthOpenedAt !== null && now - mouthOpenedAt >= 4800;
   const parentHasTemptingScore = getParentCloseTotal() >= 6;
 
-  if (parentIsAboutToClose) return Math.random() < 0.88;
-  if (mouthHasBeenOpenLongEnough && parentHasTemptingScore) return Math.random() < 0.68;
-  return Math.random() < 0.05;
+  const accuracy = cpuDifficulty === "easy" ? 0.58 : cpuDifficulty === "hard" ? 1.08 : 1;
+  if (parentIsAboutToClose) return Math.random() < Math.min(0.97, 0.88 * accuracy);
+  if (mouthHasBeenOpenLongEnough && parentHasTemptingScore) return Math.random() < Math.min(0.92, 0.68 * accuracy);
+  return Math.random() < (cpuDifficulty === "easy" ? 0.12 : cpuDifficulty === "hard" ? 0.02 : 0.05);
+}
+
+function getCpuDelay(kind: "open" | "poison" | "close" | "secure" | "child"): number {
+  const ranges = {
+    easy: { open: [1400, 2400], poison: [1050, 1750], close: [7200, 11200], secure: [1800, 3000], child: [1800, 3400] },
+    normal: { open: [900, 1600], poison: [650, 1250], close: [5600, 9400], secure: [1100, 2100], child: [1100, 2600] },
+    hard: { open: [550, 1000], poison: [380, 750], close: [4400, 7600], secure: [650, 1250], child: [650, 1500] }
+  } as const;
+  const [min, max] = ranges[cpuDifficulty][kind];
+  return randomInt(min, max);
+}
+
+function getCpuPoisonRemovalChance(): number {
+  return cpuDifficulty === "easy" ? 0.48 : cpuDifficulty === "hard" ? 0.94 : 0.78;
+}
+
+function getCpuCloseScore(): number {
+  return cpuDifficulty === "easy" ? 11 : cpuDifficulty === "hard" ? 6 : 8;
 }
 
 function getNpcEscapeSlot(player: Player): number | null {
@@ -1357,10 +1387,27 @@ function renderPlayerCountScreen(): string {
         <div class="count-options" role="group" aria-label="参加人数">
           ${[3, 4, 5, 6].map((count) => `<button class="count-option${draftPlayerCount === count ? " selected" : ""}" type="button" data-player-count="${count}"><strong>${count}</strong><span>人</span></button>`).join("")}
         </div>
+        ${pendingGameMode === "pvp" ? "" : renderCpuDifficultyOptions()}
         <button class="primary-button count-confirm" type="button" data-action="confirm-player-count">${draftPlayerCount}人で進む</button>
         <button class="text-button back-title" type="button" data-action="back-to-title">モード選択へ戻る</button>
       </section>
     </main>
+  `;
+}
+
+function renderCpuDifficultyOptions(): string {
+  const options: Array<{ id: CpuDifficulty; label: string; detail: string }> = [
+    { id: "easy", label: "弱い", detail: "ゆっくり・ミス多め" },
+    { id: "normal", label: "ふつう", detail: "標準的な判断" },
+    { id: "hard", label: "強い", detail: "素早く正確" }
+  ];
+  return `
+    <section class="difficulty-section" aria-labelledby="difficulty-title">
+      <h2 id="difficulty-title">CPUの強さ</h2>
+      <div class="difficulty-options" role="group" aria-label="CPUの強さ">
+        ${options.map((option) => `<button class="difficulty-option${cpuDifficulty === option.id ? " selected" : ""}" type="button" data-cpu-difficulty="${option.id}"><strong>${option.label}</strong><small>${option.detail}</small></button>`).join("")}
+      </div>
+    </section>
   `;
 }
 
