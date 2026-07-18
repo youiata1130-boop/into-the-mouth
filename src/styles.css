@@ -24,6 +24,100 @@
   text-rendering: optimizeLegibility;
 }
 
+.start-screen {
+  min-height: 100vh;
+  min-height: 100svh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background:
+    radial-gradient(circle at 18% 22%, rgba(255, 216, 144, 0.52), transparent 28%),
+    radial-gradient(circle at 82% 78%, rgba(22, 127, 134, 0.2), transparent 30%),
+    linear-gradient(145deg, #fff8e9, #eaf7f5);
+}
+
+.start-card {
+  width: min(820px, 100%);
+  border: 1px solid rgba(22, 127, 134, 0.18);
+  border-radius: 24px;
+  padding: clamp(28px, 6vw, 64px);
+  background: rgba(255, 255, 255, 0.9);
+  text-align: center;
+  box-shadow: 0 28px 80px rgba(18, 38, 43, 0.16);
+}
+
+.start-eyebrow {
+  margin: 0 0 10px;
+  color: var(--teal-dark);
+  font-size: 0.72rem;
+  font-weight: 1000;
+  letter-spacing: 0.2em;
+}
+
+.start-card h1 {
+  margin: 0;
+  font-size: clamp(3.4rem, 10vw, 6.8rem);
+  line-height: 0.95;
+}
+
+.start-lead {
+  max-width: 520px;
+  margin: 20px auto 30px;
+  color: var(--muted);
+  font-weight: 700;
+  line-height: 1.7;
+}
+
+.mode-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.mode-card {
+  min-height: 190px;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 10px;
+  border: 2px solid transparent;
+  border-radius: 18px;
+  padding: 22px;
+  cursor: pointer;
+  transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease;
+}
+
+.mode-card:hover,
+.mode-card:focus-visible {
+  transform: translateY(-4px);
+  border-color: var(--teal);
+  box-shadow: 0 16px 30px rgba(18, 38, 43, 0.14);
+}
+
+.mode-card-player { background: #fff3dd; }
+.mode-card-cpu { background: #e9f7f5; }
+
+.mode-icon {
+  min-width: 64px;
+  min-height: 64px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #fff;
+  color: var(--teal-dark);
+  font-size: 0.88rem;
+  font-weight: 1000;
+  box-shadow: 0 8px 20px rgba(18, 38, 43, 0.1);
+}
+
+.mode-card strong { font-size: 1.16rem; }
+.mode-card small { color: var(--muted); font-weight: 700; }
+
+@media (max-width: 620px) {
+  .mode-grid { grid-template-columns: 1fr; }
+  .mode-card { min-height: 148px; }
+}
+
 * {
   box-sizing: border-box;
 }

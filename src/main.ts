@@ -36,9 +36,12 @@ type GameEffect = {
   label: "パク！" | "ヒューん！";
 };
 type TryEndReason = "parent-close" | "escape" | "poison-timeout";
+type GameMode = "pvp" | "cpu";
 
 const appRoot = getAppRoot();
 
+let hasStarted = false;
+let gameMode: GameMode = "cpu";
 let playerCount = 4;
 let draftPlayerCount = 4;
 let parentIndex = 0;
@@ -68,6 +71,9 @@ let tryEndReason: TryEndReason | null = null;
 let tryStartScores: Record<string, number> = {};
 
 const simpleActions: Record<string, () => void> = {
+  "start-pvp": () => startGame("pvp"),
+  "start-cpu": () => startGame("cpu"),
+  "back-to-title": returnToTitle,
   "apply-setup": applySetup,
   "open-mouth": openMouth,
   "close-mouth": closeMouth,
@@ -77,7 +83,7 @@ const simpleActions: Record<string, () => void> = {
   "reset-game": resetGameWithConfirmation
 };
 
-setupNewGame();
+render();
 
 appRoot.addEventListener("click", (event) => {
   const target = event.target;
@@ -154,6 +160,20 @@ function setupNewGame(): void {
   render();
 }
 
+function startGame(mode: GameMode): void {
+  gameMode = mode;
+  hasStarted = true;
+  setupNewGame();
+}
+
+function returnToTitle(): void {
+  if (!confirmDiscardProgress()) return;
+  clearNpcTimers();
+  clearPoisonRemovalTimer();
+  hasStarted = false;
+  render();
+}
+
 function applySetup(): void {
   if (!confirmDiscardProgress()) return;
   setupNewGame();
@@ -207,7 +227,7 @@ function resetTryBox(): void {
 function createPlayers(): Player[] {
   return Array.from({ length: playerCount }, (_, index) => ({
     id: `player-${index + 1}`,
-    name: `プレイヤー${index + 1}`,
+    name: gameMode === "cpu" && `player-${index + 1}` !== humanPlayerId ? `CPU ${index + 1}` : `プレイヤー${index + 1}`,
     role: index === parentIndex ? "parent" : "child",
     score: 0,
     drawPile: [],
@@ -797,11 +817,12 @@ function getNpcEscapeSlot(player: Player): number | null {
 }
 
 function getNpcChildren(): Player[] {
+  if (gameMode === "pvp") return [];
   return getChildren().filter((player) => player.id !== humanPlayerId);
 }
 
 function isHumanParent(): boolean {
-  return getParent().id === humanPlayerId;
+  return gameMode === "pvp" || getParent().id === humanPlayerId;
 }
 
 function showMouthCloseEffect(): void {
@@ -842,6 +863,11 @@ function renderGameEffect(): string {
 }
 
 function render(): void {
+  if (!hasStarted) {
+    appRoot.innerHTML = renderStartScreen();
+    return;
+  }
+
   const rulesWereOpen = appRoot.querySelector<HTMLDetailsElement>(".rules-panel")?.open ?? false;
   const resultWasVisible = appRoot.querySelector(".try-result-panel") !== null;
   const focusedControl = getFocusedControlIdentity();
@@ -913,6 +939,7 @@ function render(): void {
           </label>
           <button class="secondary-button" type="button" data-action="apply-setup" ${isMouthOpen ? " disabled" : ""}>この設定で新しく開始</button>
           <button class="text-button" type="button" data-action="reset-game">全体を初期化</button>
+          <button class="text-button" type="button" data-action="back-to-title">タイトルへ戻る</button>
         </section>
 
         <section class="bottom-info" aria-label="ログと細かい情報">
@@ -937,6 +964,30 @@ function render(): void {
   }
 
   scheduleNpcAutomation();
+}
+
+function renderStartScreen(): string {
+  return `
+    <main class="start-screen">
+      <section class="start-card" aria-labelledby="game-title">
+        <p class="start-eyebrow">REAL-TIME CARD GAME</p>
+        <h1 id="game-title">口に入る</h1>
+        <p class="start-lead">魚を食べるか、毒を仕掛けるか。相手の動きを読んで最高得点を目指そう。</p>
+        <div class="mode-grid" aria-label="対戦モードを選択">
+          <button class="mode-card mode-card-player" type="button" data-action="start-pvp">
+            <span class="mode-icon" aria-hidden="true">対</span>
+            <strong>プレイヤーと対戦</strong>
+            <small>1台の端末を囲んで、みんなで遊ぶ</small>
+          </button>
+          <button class="mode-card mode-card-cpu" type="button" data-action="start-cpu">
+            <span class="mode-icon" aria-hidden="true">CPU</span>
+            <strong>CPUと対戦</strong>
+            <small>ひとりですぐに対戦を始める</small>
+          </button>
+        </div>
+      </section>
+    </main>
+  `;
 }
 
 function getFocusedChild(): Player | null {
@@ -1379,7 +1430,7 @@ function renderHandSlot(player: Player, card: PlayerCard | null, slotIndex: numb
     return '<div class="hand-slot"><div class="play-card empty-card"><span>空</span></div></div>';
   }
 
-  const canUse = player.id === humanPlayerId && player.role === "child" && isMouthOpen && !isGameOver;
+  const canUse = (gameMode === "pvp" || player.id === humanPlayerId) && player.role === "child" && isMouthOpen && !isGameOver;
   const ownPoisonMakesFishIneffective = card.type === "fish" && activePoison?.ownerId === player.id;
   const playLabel = ownPoisonMakesFishIneffective
     ? `魚${card.value}を出す（自分の毒魚直後のため効果なし）`
