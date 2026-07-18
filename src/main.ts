@@ -1,4 +1,6 @@
 import "./styles.css";
+import { Peer } from "peerjs";
+import type { DataConnection } from "peerjs";
 import {
   CHILD_LABELS as childLabels,
   HUMAN_PLAYER_ID as humanPlayerId,
@@ -36,12 +38,40 @@ type GameEffect = {
   label: "パク！" | "ヒューん！";
 };
 type TryEndReason = "parent-close" | "escape" | "poison-timeout";
-type GameMode = "pvp" | "cpu";
+type GameMode = "pvp" | "cpu" | "online";
+type OnlineRole = "none" | "host" | "guest";
+type OnlineGameState = {
+  playerCount: number;
+  parentIndex: number;
+  completedParentRounds: number;
+  currentTry: number;
+  players: Player[];
+  boxCards: BoxCard[];
+  activePoison: PoisonState | null;
+  isMouthOpen: boolean;
+  isTryEnded: boolean;
+  isGameOver: boolean;
+  logEntries: string[];
+  poisonDeadlineAt: number | null;
+  tryEndReason: TryEndReason | null;
+  tryStartScores: Record<string, number>;
+};
 
 const appRoot = getAppRoot();
 
 let hasStarted = false;
 let gameMode: GameMode = "cpu";
+let onlineLobbyOpen = false;
+let onlineRole: OnlineRole = "none";
+let onlinePeer: Peer | null = null;
+let hostConnection: DataConnection | null = null;
+let guestConnections: DataConnection[] = [];
+let connectionPlayerIds = new Map<string, string>();
+let onlineHumanPlayerIds = new Set<string>();
+let localPlayerId = humanPlayerId;
+let roomCode = "";
+let draftRoomCode = "";
+let onlineStatus = "";
 let playerCount = 4;
 let draftPlayerCount = 4;
 let parentIndex = 0;
@@ -74,6 +104,10 @@ const simpleActions: Record<string, () => void> = {
   "start-pvp": () => startGame("pvp"),
   "start-cpu": () => startGame("cpu"),
   "back-to-title": returnToTitle,
+  "open-online-lobby": openOnlineLobby,
+  "create-room": createOnlineRoom,
+  "join-room": joinOnlineRoom,
+  "start-online-game": startOnlineGame,
   "apply-setup": applySetup,
   "open-mouth": openMouth,
   "close-mouth": closeMouth,
@@ -97,6 +131,16 @@ appRoot.addEventListener("click", (event) => {
   const action = button.dataset.action ?? "";
   const simpleAction = simpleActions[action];
 
+  if (onlineRole === "guest" && hasStarted && isRemoteGameAction(action)) {
+    sendOnlineMessage({
+      type: "action",
+      action,
+      playerId: button.dataset.playerId,
+      slotIndex: Number(button.dataset.slotIndex)
+    });
+    return;
+  }
+
   if (simpleAction) {
     simpleAction();
     return;
@@ -111,6 +155,13 @@ appRoot.addEventListener("click", (event) => {
   } else if (action === "play-card") {
     playCard(cardTarget.playerId, cardTarget.slotIndex);
   }
+});
+
+appRoot.addEventListener("input", (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLInputElement) || target.name !== "roomCode") return;
+  draftRoomCode = target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6);
+  target.value = draftRoomCode;
 });
 
 appRoot.addEventListener("change", (event) => {
@@ -162,16 +213,193 @@ function setupNewGame(): void {
 
 function startGame(mode: GameMode): void {
   gameMode = mode;
+  localPlayerId = humanPlayerId;
   hasStarted = true;
   setupNewGame();
 }
 
 function returnToTitle(): void {
-  if (!confirmDiscardProgress()) return;
+  if (hasStarted && !confirmDiscardProgress()) return;
   clearNpcTimers();
   clearPoisonRemovalTimer();
+  destroyOnlineSession();
   hasStarted = false;
+  onlineLobbyOpen = false;
   render();
+}
+
+function openOnlineLobby(): void {
+  gameMode = "online";
+  onlineLobbyOpen = true;
+  onlineStatus = "部屋を作るか、参加コードを入力してください。";
+  render();
+}
+
+function createOnlineRoom(): void {
+  destroyOnlineSession();
+  gameMode = "online";
+  onlineRole = "host";
+  localPlayerId = "player-1";
+  roomCode = createRoomCode();
+  onlineHumanPlayerIds = new Set([localPlayerId]);
+  onlineStatus = "部屋を作成しています…";
+  render();
+
+  onlinePeer = new Peer(`into-mouth-${roomCode}`);
+  onlinePeer.on("open", () => {
+    onlineStatus = "参加者を待っています。コードを友達に送ってください。";
+    render();
+  });
+  onlinePeer.on("connection", attachGuestConnection);
+  onlinePeer.on("error", (error) => {
+    onlineStatus = error.type === "unavailable-id" ? "コードが重複しました。もう一度、部屋を作成してください。" : "接続できませんでした。通信環境を確認してください。";
+    render();
+  });
+}
+
+function joinOnlineRoom(): void {
+  if (draftRoomCode.length !== 6) {
+    onlineStatus = "6文字の参加コードを入力してください。";
+    render();
+    return;
+  }
+
+  destroyOnlineSession();
+  gameMode = "online";
+  onlineRole = "guest";
+  roomCode = draftRoomCode;
+  onlineStatus = "部屋に接続しています…";
+  render();
+
+  onlinePeer = new Peer();
+  onlinePeer.on("open", () => {
+    hostConnection = onlinePeer?.connect(`into-mouth-${roomCode}`, { reliable: true }) ?? null;
+    if (hostConnection) attachHostConnection(hostConnection);
+  });
+  onlinePeer.on("error", () => {
+    onlineStatus = "部屋が見つからないか、接続できませんでした。コードを確認してください。";
+    render();
+  });
+}
+
+function attachGuestConnection(connection: DataConnection): void {
+  connection.on("open", () => {
+    const availableId = ["player-2", "player-3", "player-4"].find((id) => !onlineHumanPlayerIds.has(id));
+    if (!availableId) {
+      connection.send({ type: "room-full" });
+      connection.close();
+      return;
+    }
+
+    guestConnections.push(connection);
+    connectionPlayerIds.set(connection.peer, availableId);
+    onlineHumanPlayerIds.add(availableId);
+    connection.send({ type: "welcome", playerId: availableId, roomCode });
+    onlineStatus = `${onlineHumanPlayerIds.size}人が参加中です。ホストがゲームを開始できます。`;
+    render();
+  });
+  connection.on("data", (data) => handleHostMessage(connection, data));
+  connection.on("close", () => {
+    const playerId = connectionPlayerIds.get(connection.peer);
+    if (playerId) onlineHumanPlayerIds.delete(playerId);
+    connectionPlayerIds.delete(connection.peer);
+    guestConnections = guestConnections.filter((item) => item !== connection);
+    onlineStatus = "参加者が退出しました。";
+    render();
+  });
+}
+
+function attachHostConnection(connection: DataConnection): void {
+  connection.on("open", () => {
+    onlineStatus = "接続しました。ホストが開始するのを待っています。";
+    render();
+  });
+  connection.on("data", (data) => handleGuestMessage(data));
+  connection.on("close", () => {
+    onlineStatus = "ホストとの接続が切れました。";
+    hasStarted = false;
+    onlineLobbyOpen = true;
+    render();
+  });
+}
+
+function handleHostMessage(connection: DataConnection, raw: unknown): void {
+  const message = raw as { type?: string; action?: string; playerId?: string; slotIndex?: number };
+  if (message.type !== "action" || !message.action) return;
+
+  const assignedId = connectionPlayerIds.get(connection.peer);
+  if (!assignedId) return;
+  if (message.action === "play-card" || message.action === "escape-card") {
+    if (message.playerId !== assignedId || !Number.isInteger(message.slotIndex)) return;
+    message.action === "play-card" ? playCard(assignedId, message.slotIndex!) : escapeWithCard(assignedId, message.slotIndex!);
+    return;
+  }
+
+  if (message.action === "next-try") {
+    prepareNextTry();
+    return;
+  }
+  if (message.action === "advance-parent") {
+    advanceParent();
+    return;
+  }
+
+  if (getParent().id !== assignedId) return;
+  if (message.action === "open-mouth") openMouth();
+  if (message.action === "close-mouth") closeMouth();
+  if (message.action === "remove-poison") removeActivePoison();
+}
+
+function handleGuestMessage(raw: unknown): void {
+  const message = raw as { type?: string; playerId?: string; state?: OnlineGameState };
+  if (message.type === "welcome" && message.playerId) {
+    localPlayerId = message.playerId;
+    onlineHumanPlayerIds.add(message.playerId);
+    onlineStatus = "接続しました。ホストが開始するのを待っています。";
+    render();
+  } else if (message.type === "state" && message.state) {
+    applyOnlineState(message.state);
+  } else if (message.type === "room-full") {
+    onlineStatus = "この部屋は満員です。";
+    render();
+  }
+}
+
+function startOnlineGame(): void {
+  if (onlineRole !== "host" || onlineHumanPlayerIds.size < 2) return;
+  playerCount = 4;
+  draftPlayerCount = 4;
+  parentIndex = 0;
+  draftParentIndex = 0;
+  hasStarted = true;
+  onlineLobbyOpen = false;
+  setupNewGame();
+}
+
+function createRoomCode(): string {
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  return Array.from({ length: 6 }, () => alphabet[Math.floor(Math.random() * alphabet.length)]).join("");
+}
+
+function destroyOnlineSession(): void {
+  hostConnection?.close();
+  guestConnections.forEach((connection) => connection.close());
+  onlinePeer?.destroy();
+  hostConnection = null;
+  guestConnections = [];
+  connectionPlayerIds.clear();
+  onlineHumanPlayerIds.clear();
+  onlinePeer = null;
+  onlineRole = "none";
+  roomCode = "";
+}
+
+function isRemoteGameAction(action: string): boolean {
+  return ["open-mouth", "close-mouth", "remove-poison", "play-card", "escape-card", "next-try", "advance-parent"].includes(action);
+}
+
+function sendOnlineMessage(message: object): void {
+  if (hostConnection?.open) hostConnection.send(message);
 }
 
 function applySetup(): void {
@@ -227,7 +455,11 @@ function resetTryBox(): void {
 function createPlayers(): Player[] {
   return Array.from({ length: playerCount }, (_, index) => ({
     id: `player-${index + 1}`,
-    name: gameMode === "cpu" && `player-${index + 1}` !== humanPlayerId ? `CPU ${index + 1}` : `プレイヤー${index + 1}`,
+    name:
+      (gameMode === "cpu" && `player-${index + 1}` !== localPlayerId) ||
+      (gameMode === "online" && !onlineHumanPlayerIds.has(`player-${index + 1}`))
+        ? `CPU ${index + 1}`
+        : `プレイヤー${index + 1}`,
     role: index === parentIndex ? "parent" : "child",
     score: 0,
     drawPile: [],
@@ -633,14 +865,16 @@ function getPoisonCountdownLabel(): string {
 function scheduleNpcAutomation(): void {
   clearNpcTimers();
 
+  if (gameMode === "online" && onlineRole !== "host") return;
+
   if (isGameOver || isTryEnded) return;
 
   if (!isMouthOpen) {
     npcParentCloseAt = null;
 
-    if (!isHumanParent()) {
+    if (isNpcParent()) {
       npcParentTimerId = window.setTimeout(() => {
-        if (!isGameOver && !isTryEnded && !isMouthOpen && !isHumanParent()) {
+        if (!isGameOver && !isTryEnded && !isMouthOpen && isNpcParent()) {
           openMouth();
         }
       }, randomInt(900, 1600));
@@ -666,11 +900,11 @@ function clearNpcTimers(): void {
 }
 
 function scheduleNpcParentAction(): void {
-  if (isHumanParent() || !isMouthOpen || isTryEnded || isGameOver) return;
+  if (!isNpcParent() || !isMouthOpen || isTryEnded || isGameOver) return;
 
   if (activePoison) {
     npcParentTimerId = window.setTimeout(() => {
-      if (!isMouthOpen || isTryEnded || isGameOver || isHumanParent() || !activePoison) return;
+      if (!isMouthOpen || isTryEnded || isGameOver || !isNpcParent() || !activePoison) return;
 
       if (Math.random() < 0.78) {
         removeActivePoison();
@@ -692,7 +926,7 @@ function scheduleNpcParentAction(): void {
   }
 
   npcParentTimerId = window.setTimeout(() => {
-    if (!isMouthOpen || isTryEnded || isGameOver || isHumanParent()) return;
+    if (!isMouthOpen || isTryEnded || isGameOver || !isNpcParent()) return;
 
     if (activePoison) {
       scheduleNpcAutomation();
@@ -818,11 +1052,18 @@ function getNpcEscapeSlot(player: Player): number | null {
 
 function getNpcChildren(): Player[] {
   if (gameMode === "pvp") return [];
-  return getChildren().filter((player) => player.id !== humanPlayerId);
+  if (gameMode === "online") return getChildren().filter((player) => !onlineHumanPlayerIds.has(player.id));
+  return getChildren().filter((player) => player.id !== localPlayerId);
 }
 
 function isHumanParent(): boolean {
-  return gameMode === "pvp" || getParent().id === humanPlayerId;
+  return gameMode === "pvp" || getParent().id === localPlayerId;
+}
+
+function isNpcParent(): boolean {
+  if (gameMode === "pvp") return false;
+  if (gameMode === "online") return !onlineHumanPlayerIds.has(getParent().id);
+  return getParent().id !== localPlayerId;
 }
 
 function showMouthCloseEffect(): void {
@@ -862,7 +1103,57 @@ function renderGameEffect(): string {
   return `<div class="game-effect is-${gameEffect.kind}" role="status" aria-live="assertive">${gameEffect.label}</div>`;
 }
 
+function getOnlineState(): OnlineGameState {
+  return {
+    playerCount,
+    parentIndex,
+    completedParentRounds,
+    currentTry,
+    players,
+    boxCards,
+    activePoison,
+    isMouthOpen,
+    isTryEnded,
+    isGameOver,
+    logEntries,
+    poisonDeadlineAt,
+    tryEndReason,
+    tryStartScores
+  };
+}
+
+function broadcastOnlineState(): void {
+  if (gameMode !== "online" || onlineRole !== "host" || !hasStarted) return;
+  const message = { type: "state", state: getOnlineState() };
+  guestConnections.filter((connection) => connection.open).forEach((connection) => connection.send(message));
+}
+
+function applyOnlineState(state: OnlineGameState): void {
+  playerCount = state.playerCount;
+  parentIndex = state.parentIndex;
+  completedParentRounds = state.completedParentRounds;
+  currentTry = state.currentTry;
+  players = state.players;
+  boxCards = state.boxCards;
+  activePoison = state.activePoison;
+  isMouthOpen = state.isMouthOpen;
+  isTryEnded = state.isTryEnded;
+  isGameOver = state.isGameOver;
+  logEntries = state.logEntries;
+  poisonDeadlineAt = state.poisonDeadlineAt;
+  tryEndReason = state.tryEndReason;
+  tryStartScores = state.tryStartScores;
+  hasStarted = true;
+  onlineLobbyOpen = false;
+  render();
+}
+
 function render(): void {
+  if (onlineLobbyOpen) {
+    appRoot.innerHTML = renderOnlineLobby();
+    return;
+  }
+
   if (!hasStarted) {
     appRoot.innerHTML = renderStartScreen();
     return;
@@ -963,6 +1254,7 @@ function render(): void {
     restoreFocusedControl(appRoot, focusedControl);
   }
 
+  broadcastOnlineState();
   scheduleNpcAutomation();
 }
 
@@ -984,14 +1276,56 @@ function renderStartScreen(): string {
             <strong>CPUと対戦</strong>
             <small>ひとりですぐに対戦を始める</small>
           </button>
+          <button class="mode-card mode-card-online" type="button" data-action="open-online-lobby">
+            <span class="mode-icon" aria-hidden="true">NET</span>
+            <strong>友達とオンライン対戦</strong>
+            <small>部屋を作り、参加コードで別の端末と遊ぶ</small>
+          </button>
         </div>
       </section>
     </main>
   `;
 }
 
+function renderOnlineLobby(): string {
+  const isHost = onlineRole === "host";
+  const isGuest = onlineRole === "guest";
+  return `
+    <main class="start-screen">
+      <section class="start-card online-lobby" aria-labelledby="online-title">
+        <p class="start-eyebrow">ONLINE ROOM</p>
+        <h1 id="online-title">友達と対戦</h1>
+        ${
+          isHost
+            ? `
+              <p class="room-label">参加コード</p>
+              <div class="room-code" aria-label="参加コード ${roomCode}">${roomCode || "------"}</div>
+              <p class="online-status" role="status">${onlineStatus}</p>
+              <button class="primary-button lobby-action" type="button" data-action="start-online-game" ${onlineHumanPlayerIds.size < 2 ? "disabled" : ""}>ゲームを開始</button>
+            `
+            : isGuest
+              ? `<div class="waiting-spinner" aria-hidden="true"></div><p class="online-status" role="status">${onlineStatus}</p>`
+              : `
+                <p class="start-lead">1人が部屋を作り、表示された6文字のコードを友達に送ります。</p>
+                <div class="lobby-actions">
+                  <button class="primary-button lobby-action" type="button" data-action="create-room">部屋を作る</button>
+                  <div class="join-box">
+                    <label for="room-code-input">参加コード</label>
+                    <input id="room-code-input" name="roomCode" value="${draftRoomCode}" maxlength="6" autocomplete="off" placeholder="ABC234">
+                    <button class="secondary-button" type="button" data-action="join-room">部屋に参加</button>
+                  </div>
+                </div>
+                <p class="online-status" role="status">${onlineStatus}</p>
+              `
+        }
+        <button class="text-button back-title" type="button" data-action="back-to-title">タイトルへ戻る</button>
+      </section>
+    </main>
+  `;
+}
+
 function getFocusedChild(): Player | null {
-  return getChildren().find((player) => player.id === humanPlayerId) ?? null;
+  return getChildren().find((player) => player.id === localPlayerId) ?? null;
 }
 
 function getOpponentChildren(focusedChildId: string | null): Player[] {
@@ -1430,7 +1764,7 @@ function renderHandSlot(player: Player, card: PlayerCard | null, slotIndex: numb
     return '<div class="hand-slot"><div class="play-card empty-card"><span>空</span></div></div>';
   }
 
-  const canUse = (gameMode === "pvp" || player.id === humanPlayerId) && player.role === "child" && isMouthOpen && !isGameOver;
+  const canUse = (gameMode === "pvp" || player.id === localPlayerId) && player.role === "child" && isMouthOpen && !isGameOver;
   const ownPoisonMakesFishIneffective = card.type === "fish" && activePoison?.ownerId === player.id;
   const playLabel = ownPoisonMakesFishIneffective
     ? `魚${card.value}を出す（自分の毒魚直後のため効果なし）`

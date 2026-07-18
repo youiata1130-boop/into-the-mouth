@@ -70,7 +70,7 @@
 
 .mode-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 14px;
 }
 
@@ -96,6 +96,7 @@
 
 .mode-card-player { background: #fff3dd; }
 .mode-card-cpu { background: #e9f7f5; }
+.mode-card-online { background: #eef0ff; }
 
 .mode-icon {
   min-width: 64px;
@@ -113,9 +114,98 @@
 .mode-card strong { font-size: 1.16rem; }
 .mode-card small { color: var(--muted); font-weight: 700; }
 
+.online-lobby h1 {
+  font-size: clamp(2.5rem, 8vw, 4.8rem);
+}
+
+.lobby-actions {
+  display: grid;
+  grid-template-columns: 1fr 1.4fr;
+  gap: 16px;
+  align-items: stretch;
+}
+
+.lobby-action {
+  min-height: 58px;
+  font-size: 1rem;
+}
+
+.join-box {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 12px;
+  background: var(--panel-soft);
+  text-align: left;
+}
+
+.join-box label {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 900;
+}
+
+.join-box input {
+  min-width: 0;
+  border: 2px solid #c9dddb;
+  border-radius: 9px;
+  padding: 10px 12px;
+  background: #fff;
+  color: var(--ink);
+  font: inherit;
+  font-size: 1.2rem;
+  font-weight: 1000;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.room-label {
+  margin: 26px 0 6px;
+  color: var(--muted);
+  font-weight: 900;
+}
+
+.room-code {
+  display: inline-block;
+  border: 2px dashed var(--teal);
+  border-radius: 14px;
+  padding: 12px 22px;
+  background: #eefaf7;
+  color: var(--teal-dark);
+  font-size: clamp(2rem, 8vw, 4rem);
+  font-weight: 1000;
+  letter-spacing: 0.16em;
+}
+
+.online-status {
+  min-height: 1.5em;
+  margin: 18px 0;
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.back-title { margin-top: 18px; }
+
+.waiting-spinner {
+  width: 48px;
+  height: 48px;
+  margin: 28px auto 8px;
+  border: 5px solid #dcebea;
+  border-top-color: var(--teal);
+  border-radius: 50%;
+  animation: lobby-spin 0.8s linear infinite;
+}
+
+@keyframes lobby-spin { to { transform: rotate(360deg); } }
+
 @media (max-width: 620px) {
   .mode-grid { grid-template-columns: 1fr; }
   .mode-card { min-height: 148px; }
+  .lobby-actions { grid-template-columns: 1fr; }
+  .join-box { grid-template-columns: 1fr; }
 }
 
 * {
