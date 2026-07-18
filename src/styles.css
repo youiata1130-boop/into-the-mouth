@@ -114,6 +114,52 @@
 .mode-card strong { font-size: 1.16rem; }
 .mode-card small { color: var(--muted); font-weight: 700; }
 
+.count-screen h1 {
+  font-size: clamp(2.7rem, 8vw, 5rem);
+}
+
+.count-options {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  max-width: 560px;
+  margin: 0 auto 22px;
+}
+
+.count-option {
+  min-height: 108px;
+  display: grid;
+  place-content: center;
+  border: 2px solid #d7e7e5;
+  border-radius: 14px;
+  background: #fff;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.count-option strong {
+  font-size: 2.35rem;
+  line-height: 1;
+}
+
+.count-option span {
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 900;
+}
+
+.count-option.selected {
+  border-color: var(--teal);
+  background: #e9f7f5;
+  color: var(--teal-dark);
+  box-shadow: 0 8px 18px rgba(22, 127, 134, 0.16);
+}
+
+.count-confirm {
+  min-width: 220px;
+  min-height: 50px;
+}
+
 .online-lobby h1 {
   font-size: clamp(2.5rem, 8vw, 4.8rem);
 }
@@ -218,6 +264,8 @@
   .mode-card { min-height: 148px; }
   .lobby-actions { grid-template-columns: 1fr; }
   .join-box { grid-template-columns: 1fr; }
+  .count-options { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .count-option { min-height: 88px; }
 }
 
 * {

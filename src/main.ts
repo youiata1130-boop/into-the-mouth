@@ -62,6 +62,8 @@ const appRoot = getAppRoot();
 
 let hasStarted = false;
 let gameMode: GameMode = "cpu";
+let modeSetupOpen = false;
+let pendingGameMode: GameMode = "cpu";
 let onlineLobbyOpen = false;
 let onlineRole: OnlineRole = "none";
 let onlinePeer: Peer | null = null;
@@ -105,10 +107,11 @@ let tryEndReason: TryEndReason | null = null;
 let tryStartScores: Record<string, number> = {};
 
 const simpleActions: Record<string, () => void> = {
-  "start-pvp": () => startGame("pvp"),
-  "start-cpu": () => startGame("cpu"),
+  "start-pvp": () => openModeSetup("pvp"),
+  "start-cpu": () => openModeSetup("cpu"),
   "back-to-title": returnToTitle,
-  "open-online-lobby": openOnlineLobby,
+  "open-online-lobby": () => openModeSetup("online"),
+  "confirm-player-count": confirmPlayerCount,
   "create-room": createOnlineRoom,
   "join-room": joinOnlineRoom,
   "start-online-game": startOnlineGame,
@@ -127,6 +130,14 @@ appRoot.addEventListener("click", (event) => {
   const target = event.target;
 
   if (!(target instanceof HTMLElement)) return;
+
+  const countButton = target.closest<HTMLButtonElement>("button[data-player-count]");
+  if (countButton) {
+    draftPlayerCount = Number(countButton.dataset.playerCount);
+    if (draftParentIndex >= draftPlayerCount) draftParentIndex = 0;
+    render();
+    return;
+  }
 
   const button = target.closest<HTMLButtonElement>("button[data-action]");
 
@@ -226,6 +237,21 @@ function startGame(mode: GameMode): void {
   setupNewGame();
 }
 
+function openModeSetup(mode: GameMode): void {
+  pendingGameMode = mode;
+  modeSetupOpen = true;
+  render();
+}
+
+function confirmPlayerCount(): void {
+  modeSetupOpen = false;
+  if (pendingGameMode === "online") {
+    openOnlineLobby();
+  } else {
+    startGame(pendingGameMode);
+  }
+}
+
 function returnToTitle(): void {
   if (hasStarted && !confirmDiscardProgress()) return;
   clearNpcTimers();
@@ -233,6 +259,7 @@ function returnToTitle(): void {
   destroyOnlineSession();
   hasStarted = false;
   onlineLobbyOpen = false;
+  modeSetupOpen = false;
   render();
 }
 
@@ -297,7 +324,7 @@ function joinOnlineRoom(): void {
 
 function attachGuestConnection(connection: DataConnection): void {
   connection.on("open", () => {
-    const availableId = ["player-2", "player-3", "player-4"].find((id) => !onlineHumanPlayerIds.has(id));
+    const availableId = Array.from({ length: draftPlayerCount - 1 }, (_, index) => `player-${index + 2}`).find((id) => !onlineHumanPlayerIds.has(id));
     if (!availableId) {
       connection.send({ type: "room-full" });
       connection.close();
@@ -371,7 +398,7 @@ function handleHostMessage(connection: DataConnection, raw: unknown): void {
 }
 
 function handleGuestMessage(raw: unknown): void {
-  const message = raw as { type?: string; playerId?: string; state?: OnlineGameState; members?: OnlineLobbyMember[] };
+  const message = raw as { type?: string; playerId?: string; state?: OnlineGameState; members?: OnlineLobbyMember[]; playerCount?: number };
   if (message.type === "welcome" && message.playerId) {
     localPlayerId = message.playerId;
     onlineHumanPlayerIds.add(message.playerId);
@@ -379,6 +406,7 @@ function handleGuestMessage(raw: unknown): void {
     render();
   } else if (message.type === "lobby" && message.members) {
     onlineLobbyMembers = message.members;
+    if (message.playerCount) draftPlayerCount = message.playerCount;
     onlineStatus = `${message.members.length}人が参加中です。ホストが開始するのを待っています。`;
     render();
   } else if (message.type === "state" && message.state) {
@@ -391,8 +419,7 @@ function handleGuestMessage(raw: unknown): void {
 
 function startOnlineGame(): void {
   if (onlineRole !== "host" || onlineHumanPlayerIds.size < 2) return;
-  playerCount = Math.max(3, onlineHumanPlayerIds.size);
-  draftPlayerCount = playerCount;
+  playerCount = draftPlayerCount;
   parentIndex = 0;
   draftParentIndex = 0;
   hasStarted = true;
@@ -423,7 +450,7 @@ function updateOnlineLobbyMembers(): void {
 }
 
 function broadcastOnlineLobby(): void {
-  const message = { type: "lobby", members: onlineLobbyMembers };
+  const message = { type: "lobby", members: onlineLobbyMembers, playerCount: draftPlayerCount };
   guestConnections.filter((connection) => connection.open).forEach((connection) => connection.send(message));
 }
 
@@ -1199,6 +1226,11 @@ function applyOnlineState(state: OnlineGameState): void {
 }
 
 function render(): void {
+  if (modeSetupOpen) {
+    appRoot.innerHTML = renderPlayerCountScreen();
+    return;
+  }
+
   if (onlineLobbyOpen) {
     appRoot.innerHTML = renderOnlineLobby();
     return;
@@ -1310,6 +1342,28 @@ function render(): void {
   scheduleNpcAutomation();
 }
 
+function renderPlayerCountScreen(): string {
+  const modeLabels: Record<GameMode, string> = {
+    pvp: "プレイヤーと対戦",
+    cpu: "CPUと対戦",
+    online: "友達とオンライン対戦"
+  };
+  return `
+    <main class="start-screen">
+      <section class="start-card count-screen" aria-labelledby="count-title">
+        <p class="start-eyebrow">${modeLabels[pendingGameMode]}</p>
+        <h1 id="count-title">人数を選択</h1>
+        <p class="start-lead">3〜6人から、今回のゲームに参加する人数を選んでください。</p>
+        <div class="count-options" role="group" aria-label="参加人数">
+          ${[3, 4, 5, 6].map((count) => `<button class="count-option${draftPlayerCount === count ? " selected" : ""}" type="button" data-player-count="${count}"><strong>${count}</strong><span>人</span></button>`).join("")}
+        </div>
+        <button class="primary-button count-confirm" type="button" data-action="confirm-player-count">${draftPlayerCount}人で進む</button>
+        <button class="text-button back-title" type="button" data-action="back-to-title">モード選択へ戻る</button>
+      </section>
+    </main>
+  `;
+}
+
 function renderStartScreen(): string {
   return `
     <main class="start-screen">
@@ -1386,7 +1440,7 @@ function renderOnlineParticipants(): string {
   return `
     <section class="participant-panel" aria-label="参加者一覧">
       <div class="participant-summary">
-        <strong>参加者 ${onlineLobbyMembers.length}人</strong>
+        <strong>参加者 ${onlineLobbyMembers.length}/${draftPlayerCount}人</strong>
         <span>最初の親：${onlineLobbyMembers[0]?.name ?? "未定"}</span>
       </div>
       <ul class="participant-list">
