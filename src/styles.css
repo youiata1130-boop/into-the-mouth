@@ -141,14 +141,26 @@
   text-align: left;
 }
 
-.join-box label {
+.create-box {
+  display: grid;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 12px;
+  background: #fff3dd;
+  text-align: left;
+}
+
+.join-box label,
+.create-box label {
   grid-column: 1 / -1;
   color: var(--muted);
   font-size: 0.72rem;
   font-weight: 900;
 }
 
-.join-box input {
+.join-box input,
+.create-box input {
   min-width: 0;
   border: 2px solid #c9dddb;
   border-radius: 9px;
@@ -2151,6 +2163,54 @@ body {
   .detail-screen .bottom-info {
     grid-template-columns: 1fr;
   }
+}
+
+.participant-panel {
+  max-width: 520px;
+  margin: 18px auto 0;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 12px;
+  background: var(--panel-soft);
+  text-align: left;
+}
+
+.participant-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding-bottom: 9px;
+  color: var(--teal-dark);
+  font-size: 0.82rem;
+}
+
+.participant-list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.participant-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: #fff;
+  font-weight: 900;
+}
+
+.participant-list strong,
+.participant-list small {
+  border-radius: 999px;
+  padding: 3px 7px;
+  background: #e9f7f5;
+  color: var(--teal-dark);
+  font-size: 0.68rem;
 }
 
 .board-screen .center-stage.no-parent-controls {

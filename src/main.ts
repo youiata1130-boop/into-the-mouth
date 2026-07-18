@@ -40,6 +40,7 @@ type GameEffect = {
 type TryEndReason = "parent-close" | "escape" | "poison-timeout";
 type GameMode = "pvp" | "cpu" | "online";
 type OnlineRole = "none" | "host" | "guest";
+type OnlineLobbyMember = { playerId: string; name: string; isHost: boolean };
 type OnlineGameState = {
   playerCount: number;
   parentIndex: number;
@@ -68,9 +69,12 @@ let hostConnection: DataConnection | null = null;
 let guestConnections: DataConnection[] = [];
 let connectionPlayerIds = new Map<string, string>();
 let onlineHumanPlayerIds = new Set<string>();
+let onlinePlayerNames = new Map<string, string>();
+let onlineLobbyMembers: OnlineLobbyMember[] = [];
 let localPlayerId = humanPlayerId;
 let roomCode = "";
 let draftRoomCode = "";
+let draftPlayerName = "";
 let onlineStatus = "";
 let playerCount = 4;
 let draftPlayerCount = 4;
@@ -159,9 +163,13 @@ appRoot.addEventListener("click", (event) => {
 
 appRoot.addEventListener("input", (event) => {
   const target = event.target;
-  if (!(target instanceof HTMLInputElement) || target.name !== "roomCode") return;
-  draftRoomCode = target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6);
-  target.value = draftRoomCode;
+  if (!(target instanceof HTMLInputElement)) return;
+  if (target.name === "roomCode") {
+    draftRoomCode = target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6);
+    target.value = draftRoomCode;
+  } else if (target.name === "playerName") {
+    draftPlayerName = target.value.slice(0, 12);
+  }
 });
 
 appRoot.addEventListener("change", (event) => {
@@ -242,6 +250,8 @@ function createOnlineRoom(): void {
   localPlayerId = "player-1";
   roomCode = createRoomCode();
   onlineHumanPlayerIds = new Set([localPlayerId]);
+  onlinePlayerNames = new Map([[localPlayerId, getEnteredPlayerName("ホスト")]]);
+  updateOnlineLobbyMembers();
   onlineStatus = "部屋を作成しています…";
   render();
 
@@ -273,7 +283,10 @@ function joinOnlineRoom(): void {
 
   onlinePeer = new Peer();
   onlinePeer.on("open", () => {
-    hostConnection = onlinePeer?.connect(`into-mouth-${roomCode}`, { reliable: true }) ?? null;
+    hostConnection = onlinePeer?.connect(`into-mouth-${roomCode}`, {
+      reliable: true,
+      metadata: { playerName: getEnteredPlayerName("ゲスト") }
+    }) ?? null;
     if (hostConnection) attachHostConnection(hostConnection);
   });
   onlinePeer.on("error", () => {
@@ -294,17 +307,24 @@ function attachGuestConnection(connection: DataConnection): void {
     guestConnections.push(connection);
     connectionPlayerIds.set(connection.peer, availableId);
     onlineHumanPlayerIds.add(availableId);
+    const metadata = connection.metadata as { playerName?: string } | undefined;
+    onlinePlayerNames.set(availableId, sanitizePlayerName(metadata?.playerName, `プレイヤー${onlineHumanPlayerIds.size}`));
+    updateOnlineLobbyMembers();
     connection.send({ type: "welcome", playerId: availableId, roomCode });
     onlineStatus = `${onlineHumanPlayerIds.size}人が参加中です。ホストがゲームを開始できます。`;
+    broadcastOnlineLobby();
     render();
   });
   connection.on("data", (data) => handleHostMessage(connection, data));
   connection.on("close", () => {
     const playerId = connectionPlayerIds.get(connection.peer);
     if (playerId) onlineHumanPlayerIds.delete(playerId);
+    if (playerId) onlinePlayerNames.delete(playerId);
     connectionPlayerIds.delete(connection.peer);
     guestConnections = guestConnections.filter((item) => item !== connection);
     onlineStatus = "参加者が退出しました。";
+    updateOnlineLobbyMembers();
+    broadcastOnlineLobby();
     render();
   });
 }
@@ -351,11 +371,15 @@ function handleHostMessage(connection: DataConnection, raw: unknown): void {
 }
 
 function handleGuestMessage(raw: unknown): void {
-  const message = raw as { type?: string; playerId?: string; state?: OnlineGameState };
+  const message = raw as { type?: string; playerId?: string; state?: OnlineGameState; members?: OnlineLobbyMember[] };
   if (message.type === "welcome" && message.playerId) {
     localPlayerId = message.playerId;
     onlineHumanPlayerIds.add(message.playerId);
     onlineStatus = "接続しました。ホストが開始するのを待っています。";
+    render();
+  } else if (message.type === "lobby" && message.members) {
+    onlineLobbyMembers = message.members;
+    onlineStatus = `${message.members.length}人が参加中です。ホストが開始するのを待っています。`;
     render();
   } else if (message.type === "state" && message.state) {
     applyOnlineState(message.state);
@@ -367,8 +391,8 @@ function handleGuestMessage(raw: unknown): void {
 
 function startOnlineGame(): void {
   if (onlineRole !== "host" || onlineHumanPlayerIds.size < 2) return;
-  playerCount = 4;
-  draftPlayerCount = 4;
+  playerCount = Math.max(3, onlineHumanPlayerIds.size);
+  draftPlayerCount = playerCount;
   parentIndex = 0;
   draftParentIndex = 0;
   hasStarted = true;
@@ -381,6 +405,28 @@ function createRoomCode(): string {
   return Array.from({ length: 6 }, () => alphabet[Math.floor(Math.random() * alphabet.length)]).join("");
 }
 
+function getEnteredPlayerName(fallback: string): string {
+  return sanitizePlayerName(draftPlayerName, fallback);
+}
+
+function sanitizePlayerName(value: string | undefined, fallback: string): string {
+  const name = (value ?? "").trim().replace(/[<>]/g, "").slice(0, 12);
+  return name || fallback;
+}
+
+function updateOnlineLobbyMembers(): void {
+  onlineLobbyMembers = [...onlineHumanPlayerIds].map((playerId) => ({
+    playerId,
+    name: onlinePlayerNames.get(playerId) ?? playerId,
+    isHost: playerId === "player-1"
+  }));
+}
+
+function broadcastOnlineLobby(): void {
+  const message = { type: "lobby", members: onlineLobbyMembers };
+  guestConnections.filter((connection) => connection.open).forEach((connection) => connection.send(message));
+}
+
 function destroyOnlineSession(): void {
   hostConnection?.close();
   guestConnections.forEach((connection) => connection.close());
@@ -389,6 +435,8 @@ function destroyOnlineSession(): void {
   guestConnections = [];
   connectionPlayerIds.clear();
   onlineHumanPlayerIds.clear();
+  onlinePlayerNames.clear();
+  onlineLobbyMembers = [];
   onlinePeer = null;
   onlineRole = "none";
   roomCode = "";
@@ -453,19 +501,21 @@ function resetTryBox(): void {
 }
 
 function createPlayers(): Player[] {
-  return Array.from({ length: playerCount }, (_, index) => ({
-    id: `player-${index + 1}`,
-    name:
-      (gameMode === "cpu" && `player-${index + 1}` !== localPlayerId) ||
-      (gameMode === "online" && !onlineHumanPlayerIds.has(`player-${index + 1}`))
-        ? `CPU ${index + 1}`
-        : `プレイヤー${index + 1}`,
+  return Array.from({ length: playerCount }, (_, index) => {
+    const playerId = `player-${index + 1}`;
+    const isCpu =
+      (gameMode === "cpu" && playerId !== localPlayerId) ||
+      (gameMode === "online" && !onlineHumanPlayerIds.has(playerId));
+    return {
+    id: playerId,
+    name: isCpu ? `CPU ${index + 1}` : gameMode === "online" ? (onlinePlayerNames.get(playerId) ?? `プレイヤー${index + 1}`) : `プレイヤー${index + 1}`,
     role: index === parentIndex ? "parent" : "child",
     score: 0,
     drawPile: [],
     faceUp: [],
     used: []
-  }));
+  };
+  });
 }
 
 function resetChildDeck(player: Player): void {
@@ -1302,15 +1352,20 @@ function renderOnlineLobby(): string {
             ? `
               <p class="room-label">参加コード</p>
               <div class="room-code" aria-label="参加コード ${roomCode}">${roomCode || "------"}</div>
+              ${renderOnlineParticipants()}
               <p class="online-status" role="status">${onlineStatus}</p>
               <button class="primary-button lobby-action" type="button" data-action="start-online-game" ${onlineHumanPlayerIds.size < 2 ? "disabled" : ""}>ゲームを開始</button>
             `
             : isGuest
-              ? `<div class="waiting-spinner" aria-hidden="true"></div><p class="online-status" role="status">${onlineStatus}</p>`
+              ? `<div class="waiting-spinner" aria-hidden="true"></div>${renderOnlineParticipants()}<p class="online-status" role="status">${onlineStatus}</p>`
               : `
                 <p class="start-lead">1人が部屋を作り、表示された6文字のコードを友達に送ります。</p>
                 <div class="lobby-actions">
-                  <button class="primary-button lobby-action" type="button" data-action="create-room">部屋を作る</button>
+                  <div class="create-box">
+                    <label for="player-name-input">表示名（部屋作成・参加共通）</label>
+                    <input id="player-name-input" name="playerName" value="${draftPlayerName}" maxlength="12" autocomplete="nickname" placeholder="あなたの名前">
+                    <button class="primary-button lobby-action" type="button" data-action="create-room">部屋を作る</button>
+                  </div>
                   <div class="join-box">
                     <label for="room-code-input">参加コード</label>
                     <input id="room-code-input" name="roomCode" value="${draftRoomCode}" maxlength="6" autocomplete="off" placeholder="ABC234">
@@ -1323,6 +1378,21 @@ function renderOnlineLobby(): string {
         <button class="text-button back-title" type="button" data-action="back-to-title">タイトルへ戻る</button>
       </section>
     </main>
+  `;
+}
+
+function renderOnlineParticipants(): string {
+  if (onlineLobbyMembers.length === 0) return "";
+  return `
+    <section class="participant-panel" aria-label="参加者一覧">
+      <div class="participant-summary">
+        <strong>参加者 ${onlineLobbyMembers.length}人</strong>
+        <span>最初の親：${onlineLobbyMembers[0]?.name ?? "未定"}</span>
+      </div>
+      <ul class="participant-list">
+        ${onlineLobbyMembers.map((member, index) => `<li><span>${member.name}</span>${index === 0 ? "<strong>最初の親</strong>" : member.isHost ? "<small>ホスト</small>" : "<small>参加</small>"}</li>`).join("")}
+      </ul>
+    </section>
   `;
 }
 
@@ -1394,7 +1464,7 @@ function renderStat(label: string, value: string): string {
 }
 
 function renderNumberOptions(): string {
-  return [4, 5, 6]
+  return [3, 4, 5, 6]
     .map((count) => `<option value="${count}"${count === draftPlayerCount ? " selected" : ""}>${count}人</option>`)
     .join("");
 }
