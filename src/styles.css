@@ -2153,6 +2153,10 @@ body {
   }
 }
 
+.board-screen .center-stage.no-parent-controls {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 /* On phones, keep the local hand large and compress other players. */
 @media (max-width: 760px) {
   .board-screen .top-seats { padding: 6px; overflow-x: auto; overflow-y: hidden; }

@@ -1175,7 +1175,7 @@ function render(): void {
           </div>
         </section>
 
-        <section class="center-stage"${isTryEnded ? " inert" : ""}>
+        <section class="center-stage${isHumanParent() ? "" : " no-parent-controls"}"${isTryEnded ? " inert" : ""}>
           <section class="mouth-panel" aria-label="大きな魚の口">
             <div class="mouth-title-row">
               <div>
@@ -1187,9 +1187,11 @@ function render(): void {
             ${renderMouth()}
           </section>
 
-          <aside class="parent-side" aria-label="親の操作">
-            ${renderParentControls(false)}
-          </aside>
+          ${
+            isHumanParent()
+              ? `<aside class="parent-side" aria-label="親の操作">${renderParentControls(false)}</aside>`
+              : ""
+          }
         </section>
 
         <section class="self-seat" aria-label="自分の子プレイヤー"${isTryEnded ? " inert" : ""}>
