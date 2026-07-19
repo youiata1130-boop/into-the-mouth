@@ -1814,26 +1814,13 @@ function renderBoxCard(card: BoxCard, concealed = false): string {
     `;
   }
 
-  const candidateTotal = sumCapturedIds(card.capturedIds);
-  const statusTag = getFishStatusTag(card, candidateTotal);
-
   return `
     <article${accessibility} class="box-card fish-card-in-box value-${card.value} ${card.consumedById ? "is-eaten" : ""} ${card.poisonScoredById ? "is-poison-scored" : ""} ${card.invalidatedByOwnPoison ? "is-ineffective" : ""} ${card.escaped ? "is-escaped" : ""}">
       <span class="card-sequence">${card.sequence}</span>
+      <img class="card-fish-art" src="./fish-${card.value}.png" alt="" aria-hidden="true">
       <span class="card-value">${card.value}</span>
-      <span class="card-name">${card.ownerName}</span>
-      ${statusTag}
     </article>
   `;
-}
-
-function getFishStatusTag(card: FishBoxCard, candidateTotal: number): string {
-  if (card.invalidatedByOwnPoison) return '<span class="card-tag">効果なし</span>';
-  if (card.poisonScoredByName) return `<span class="card-tag">毒で${card.poisonScoredByName}へ</span>`;
-  if (card.escaped) return `<span class="card-tag">逃げ成功</span>`;
-  if (card.consumedById) return `<span class="card-tag">食べられた</span>`;
-  if (candidateTotal > 0) return `<span class="card-tag">候補 ${candidateTotal}点</span>`;
-  return "";
 }
 
 function getPoisonCardStatusLabel(status: PoisonCardStatus): string {
@@ -1947,9 +1934,7 @@ function renderHandSlot(player: Player, card: PlayerCard | null, slotIndex: numb
         ? "毒魚を出す"
         : `魚${card.value}を出す`;
   const cardClass = card.type === "poison" ? "poison-hand-card" : `fish-hand-card value-${card.value}`;
-  const valueLabel = card.type === "poison" ? "毒" : String(card.value);
-  const nameLabel = card.type === "poison" ? "毒魚" : "魚";
-  const cardHint = getHandCardHint(player, card);
+  const valueLabel = card.type === "poison" ? "" : String(card.value);
   const escapeCandidate = getPlayerCandidates(player.id).at(-1);
   const escapePoints = escapeCandidate ? sumCapturedIds(escapeCandidate.capturedIds) : 0;
   const escapeLabel = escapeCandidate ? `裏で逃げる ${escapePoints}点` : "裏で逃げる（効果なし）";
@@ -1965,9 +1950,8 @@ function renderHandSlot(player: Player, card: PlayerCard | null, slotIndex: numb
         ${canUse ? "" : " disabled"}
         title="${canUse ? playLabel : "口が開いている間だけ使用できます。"}"
       >
-        <span class="card-value">${valueLabel}</span>
-        <span class="card-name">${nameLabel}</span>
-        <span class="card-preview">${cardHint}</span>
+        <img class="card-fish-art" src="${card.type === "fish" ? `./fish-${card.value}.png` : "./fish-card.png"}" alt="" aria-hidden="true">
+        ${valueLabel ? `<span class="card-value">${valueLabel}</span>` : ""}
       </button>
       <button
         class="escape-chip"
@@ -1982,16 +1966,6 @@ function renderHandSlot(player: Player, card: PlayerCard | null, slotIndex: numb
       </button>
     </div>
   `;
-}
-
-function getHandCardHint(player: Player, card: PlayerCard): string {
-  if (card.type === "poison") {
-    return activePoison ? "得点権を奪う" : "得点権を置く";
-  }
-
-  if (activePoison?.ownerId === player.id) return "効果なし";
-  if (activePoison) return `${activePoison.ownerName}へ${card.value}点`;
-  return "場に出す";
 }
 
 function getMouthStatusLabel(): string {

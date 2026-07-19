@@ -2348,3 +2348,152 @@ body {
   .board-screen .child-panel.is-self .card-name { font-size: 0.72rem; }
   .board-screen .child-panel.is-self .escape-chip { min-height: 36px; font-size: 0.72rem; }
 }
+
+/* A slimmer, more recognisable mouth silhouette. */
+.board-screen .mouth::before {
+  width: min(74%, 500px);
+  height: 164px;
+  border-radius: 50%;
+  background: linear-gradient(180deg, #299ba0 0%, #0b6871 100%);
+  box-shadow:
+    inset 0 -10px 0 rgba(0, 0, 0, 0.1),
+    0 10px 24px rgba(18, 76, 82, 0.16);
+}
+
+.board-screen .jaw {
+  width: min(68%, 456px);
+  height: 24px;
+  padding: 0 42px;
+  border: 2px solid #8f283d;
+  background: linear-gradient(180deg, #ef8790, #bd455d);
+  box-shadow: 0 3px 0 #762437;
+}
+
+.board-screen .jaw span {
+  width: 14px;
+  height: 13px;
+  border-color: #eadfda;
+  border-radius: 2px;
+}
+
+.board-screen .jaw-top {
+  top: 38px;
+  border-radius: 70% 70% 34% 34% / 100% 100% 55% 55%;
+  clip-path: polygon(0 0, 100% 0, 100% 62%, 76% 76%, 50% 100%, 24% 76%, 0 62%);
+}
+
+.board-screen .jaw-bottom {
+  bottom: 38px;
+  border-radius: 34% 34% 70% 70% / 55% 55% 100% 100%;
+  clip-path: polygon(0 38%, 24% 24%, 50% 0, 76% 24%, 100% 38%, 100% 100%, 0 100%);
+}
+
+.board-screen .jaw-top span:nth-child(2),
+.board-screen .jaw-top span:nth-child(4) {
+  transform: translateY(2px);
+}
+
+.board-screen .jaw-top span:nth-child(3) {
+  transform: translateY(4px);
+}
+
+.board-screen .jaw-bottom span:nth-child(2),
+.board-screen .jaw-bottom span:nth-child(4) {
+  transform: translateY(-2px);
+}
+
+.board-screen .jaw-bottom span:nth-child(3) {
+  transform: translateY(-4px);
+}
+
+.board-screen .mouth.is-closed .jaw-top {
+  transform: translateY(65px);
+}
+
+.board-screen .mouth.is-closed .jaw-bottom {
+  transform: translateY(-65px);
+}
+
+.board-screen .mouth-cavity {
+  width: min(66%, 420px);
+  min-height: 138px;
+  border-width: 5px;
+  border-radius: 50% / 42%;
+  padding: 10px 24px;
+  background:
+    radial-gradient(ellipse at 50% 82%, rgba(222, 102, 118, 0.42), transparent 42%),
+    linear-gradient(180deg, #8e3049, #401326);
+}
+
+@media (max-width: 560px) {
+  .board-screen .jaw {
+    width: 82%;
+    padding-inline: 24px;
+  }
+
+  .board-screen .mouth-cavity {
+    width: 78%;
+    padding-inline: 14px;
+  }
+}
+
+/* Hand cards use an illustration with the value overlaid; no face copy. */
+.play-card:not(.empty-card) {
+  isolation: isolate;
+  overflow: hidden;
+}
+
+.card-fish-art {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.34;
+  mix-blend-mode: multiply;
+  pointer-events: none;
+}
+
+.play-card .card-value {
+  position: relative;
+  z-index: 1;
+  color: #fffdf5;
+  font-size: clamp(2.1rem, 4.5vw, 3.35rem);
+  line-height: 1;
+  text-shadow:
+    0 3px 0 #4d1323,
+    2px 0 0 #4d1323,
+    -2px 0 0 #4d1323,
+    0 -2px 0 #4d1323,
+    0 5px 10px rgba(47, 12, 22, 0.46);
+}
+
+.fish-card-in-box {
+  isolation: isolate;
+  overflow: hidden;
+}
+
+.fish-card-in-box .card-fish-art {
+  opacity: 0.28;
+}
+
+.fish-card-in-box .card-value {
+  position: relative;
+  z-index: 1;
+  color: #fffdf5;
+  font-size: 1.8rem;
+  text-shadow:
+    0 2px 0 #4d1323,
+    1px 0 0 #4d1323,
+    -1px 0 0 #4d1323,
+    0 -1px 0 #4d1323;
+}
+
+.fish-card-in-box .card-sequence {
+  z-index: 2;
+}
+
+.poison-hand-card .card-fish-art {
+  filter: hue-rotate(72deg) saturate(1.25) brightness(0.82);
+}
