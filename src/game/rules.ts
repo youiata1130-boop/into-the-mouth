@@ -20,7 +20,20 @@ export function resolvePredation(boxCards: BoxCard[], newFish: FishBoxCard): num
     if (!isNumericBoxCard(target) || target.consumedById !== null) continue;
     if (target.type === "fish" && target.invalidatedByOwnPoison) continue;
     if (target.type === "fish" && target.poisonScoredById) break;
-    if (target.value >= newFish.value) break;
+    if (target.value === newFish.value) break;
+
+    if (target.type === "fish" && target.value > newFish.value) {
+      const swallowedIds = [newFish.boxId, ...capturedIds];
+
+      for (const swallowedId of swallowedIds) {
+        const swallowedCard = getNumericBoxCard(boxCards, swallowedId);
+        if (swallowedCard) swallowedCard.consumedById = target.boxId;
+      }
+
+      target.capturedIds = [...new Set([...target.capturedIds, ...swallowedIds])];
+      newFish.capturedIds = [];
+      return [];
+    }
 
     capturedIds.add(target.boxId);
     transferCapturedCard(boxCards, target, newFish, capturedIds);
@@ -41,11 +54,12 @@ export function getPlayerCandidates(boxCards: BoxCard[], playerId: string): Fish
   );
 }
 
-export function getParentCloseTotal(boxCards: BoxCard[]): number {
+export function getParentCloseTotal(boxCards: BoxCard[], scoringPlayerId: string): number {
   if (boxCards.some((card) => card.type === "fish" && card.escaped)) return 0;
 
   return boxCards.reduce((total, card) => {
     if (!isNumericBoxCard(card)) return total;
+    if (card.ownerId === scoringPlayerId) return total;
     if (card.type === "fish" && (card.poisonScoredById || card.invalidatedByOwnPoison)) return total;
     return total + card.value;
   }, 0);
@@ -55,14 +69,14 @@ export function getCardsInMouth(boxCards: BoxCard[]): BoxCard[] {
   return boxCards.filter((card) => card.type !== "poison" || card.status !== "removed");
 }
 
-export function sumCapturedIds(boxCards: BoxCard[], cardIds: number[]): number {
+export function sumCapturedIds(boxCards: BoxCard[], cardIds: number[], scoringPlayerId: string): number {
   return cardIds.reduce((total, cardId) => {
     const card = getNumericBoxCard(boxCards, cardId);
-    return total + (card?.value ?? 0);
+    return total + (card && card.ownerId !== scoringPlayerId ? card.value : 0);
   }, 0);
 }
 
-export function estimateFishCaptureValue(boxCards: BoxCard[], value: FishValue): number {
+export function estimateFishCaptureValue(boxCards: BoxCard[], value: FishValue, scoringPlayerId: string): number {
   let total = 0;
 
   for (let index = boxCards.length - 1; index >= 0; index -= 1) {
@@ -79,12 +93,13 @@ export function estimateFishCaptureValue(boxCards: BoxCard[], value: FishValue):
     if (!isNumericBoxCard(target) || target.consumedById !== null) continue;
     if (target.type === "fish" && target.invalidatedByOwnPoison) continue;
     if (target.type === "fish" && target.poisonScoredById) break;
-    if (target.value >= value) break;
+    if (target.value > value) return 0;
+    if (target.value === value) break;
 
-    total += target.value;
+    if (target.ownerId !== scoringPlayerId) total += target.value;
 
     if (target.type === "fish") {
-      total += sumCapturedIds(boxCards, target.capturedIds);
+      total += sumCapturedIds(boxCards, target.capturedIds, scoringPlayerId);
     }
   }
 

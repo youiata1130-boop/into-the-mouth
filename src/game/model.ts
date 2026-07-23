@@ -32,6 +32,8 @@ export type BaitBoxCard = {
   boxId: number;
   type: "bait";
   value: 1;
+  ownerId: string;
+  ownerName: string;
   sequence: number;
   consumedById: number | null;
 };

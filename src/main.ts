@@ -12,7 +12,6 @@ import { canStackFishCards, createShuffledDeck, drawCard, stackFaceUpFishCards, 
 import { randomInt, shuffle } from "./game/random";
 import {
   estimateFishCaptureValue as estimateBoardFishCaptureValue,
-  getCardsInMouth as getBoardCardsInMouth,
   getParentCloseTotal as getBoardParentCloseTotal,
   getPlayerCandidates as getBoardPlayerCandidates,
   resolvePredation as resolveBoardPredation,
@@ -56,6 +55,13 @@ type TryReplaySchedule = {
   finalAt: number;
   duration: number;
 };
+type MouthFishMotion = {
+  enteringId: number;
+  predatorId: number | null;
+  preyIds: number[];
+  cameraFrom: number;
+  cameraTo: number;
+};
 type GameMode = "pvp" | "cpu" | "online";
 type OnlineRole = "none" | "host" | "guest";
 type CpuDifficulty = "easy" | "normal" | "hard";
@@ -87,6 +93,7 @@ type OnlineGameState = {
   isTryEnded: boolean;
   biteAftermath: BiteAftermath | null;
   isTryReplayActive: boolean;
+  mouthFishMotion: MouthFishMotion | null;
   isGameOver: boolean;
   logEntries: string[];
   poisonDeadlineAt: number | null;
@@ -96,6 +103,7 @@ type OnlineGameState = {
 
 const appRoot = getAppRoot();
 const biteAftermathDurationMs = 1500;
+const mouthFishMotionDurationMs = 900;
 
 const fishArtPaths: Record<FishValue, string> = {
   2: "./assets/cards/value-2-sardine.png",
@@ -142,6 +150,8 @@ let biteAftermath: BiteAftermath | null = null;
 let biteAftermathTimerId: number | null = null;
 let isTryReplayActive = false;
 let tryReplayTimerId: number | null = null;
+let mouthFishMotion: MouthFishMotion | null = null;
+let mouthFishMotionTimerId: number | null = null;
 let isGameOver = false;
 let logEntries: string[] = [];
 let npcChildTimerId: number | null = null;
@@ -471,6 +481,8 @@ function stackCardsIntoSchool(
   expectedSourceCardId?: number,
   expectedTargetCardId?: number
 ): void {
+  if (mouthFishMotion) return;
+
   const player = getPlayer(playerId);
   if (player.role !== "child" || !isMouthOpen || isTryEnded || isGameOver) return;
 
@@ -536,6 +548,7 @@ function returnToTitle(): void {
   clearPoisonRemovalTimer();
   clearBiteAftermath();
   clearTryReplay();
+  clearMouthFishMotion();
   destroyOnlineSession();
   hasStarted = false;
   onlineLobbyOpen = false;
@@ -824,6 +837,7 @@ function resetTryBox(): void {
   clearPoisonRemovalTimer();
   clearBiteAftermath();
   clearTryReplay();
+  clearMouthFishMotion();
   nextSequence = 1;
   boxCards = [createBaitBoxCard()];
   tryStartScores = Object.fromEntries(players.map((player) => [player.id, player.score]));
@@ -859,10 +873,14 @@ function resetChildDeck(player: Player): void {
 }
 
 function createBaitBoxCard(): BaitBoxCard {
+  const parent = getParent();
+
   return {
     boxId: nextBoxCardId++,
     type: "bait",
     value: 1,
+    ownerId: parent.id,
+    ownerName: parent.name,
     sequence: nextSequence++,
     consumedById: null
   };
@@ -880,7 +898,7 @@ function openMouth(): void {
 }
 
 function closeMouth(): void {
-  if (!isMouthOpen || isGameOver) return;
+  if (!isMouthOpen || isGameOver || mouthFishMotion) return;
 
   const parent = getParent();
   tryEndReason = "parent-close";
@@ -900,7 +918,7 @@ function closeMouth(): void {
 
   const total = getParentCloseTotal();
   parent.score += total;
-  addLog(`${parent.name} が口を閉じました。毒魚・逃げる・毒魚で得点化済みの魚を除き、親が ${total} 点を獲得しました。`);
+  addLog(`${parent.name} が口を閉じました。親自身の餌・毒魚・逃げる・毒魚で得点化済みの魚を除き、親が ${total} 点を獲得しました。`);
   finishTry();
   startBiteAftermath("fed");
 }
@@ -908,6 +926,7 @@ function closeMouth(): void {
 function finishTry(): void {
   clearNpcTimers();
   clearPoisonRemovalTimer();
+  clearMouthFishMotion();
 
   if (activePoison) {
     markPoisonResolved(activePoison.boxId, "cancelled");
@@ -965,11 +984,14 @@ function removeActivePoison(): void {
   markPoisonResolved(removedPoison.boxId, "removed");
   activePoison = null;
   clearPoisonRemovalTimer();
+  clearMouthFishMotion();
   addLog(`${getParent().name} が ${removedPoison.ownerName} の毒魚を取り除きました。通常どおり続行します。`);
   render();
 }
 
 function playCard(playerId: string, slotIndex: number): void {
+  if (mouthFishMotion) return;
+
   const player = getPlayer(playerId);
   const card = player.faceUp[slotIndex];
 
@@ -994,6 +1016,8 @@ function playFish(player: Player, slotIndex: number): void {
 
   if (!card || card.type !== "fish") return;
 
+  const cameraFrom = getMouthCameraZoom();
+  const liveBeforeIds = new Set(getLiveMouthNumericCards().map((item) => item.boxId));
   const fishBoxCard: FishBoxCard = {
     boxId: nextBoxCardId++,
     sourceCardId: card.id,
@@ -1017,6 +1041,7 @@ function playFish(player: Player, slotIndex: number): void {
 
   if (activePoison?.ownerId === player.id) {
     fishBoxCard.invalidatedByOwnPoison = true;
+    startFishEntryMotion(fishBoxCard, liveBeforeIds, cameraFrom);
     addLog(`${player.name} は自分の毒魚に続けて${getFishCardLabel(card)}を出したため、このカードは効果も得点価値も持ちません。`);
     render();
     return;
@@ -1031,16 +1056,50 @@ function playFish(player: Player, slotIndex: number): void {
     clearPoisonRemovalTimer();
     addLog(`${player.name} が${getFishCardLabel(card)}を出しました。${activePoison.ownerName} の毒魚が発動し、${activePoison.ownerName} が ${card.value} 点を確定しました。`);
     activePoison = null;
+    startFishEntryMotion(fishBoxCard, liveBeforeIds, cameraFrom);
     render();
     return;
   }
 
   fishBoxCard.capturedIds = resolvePredation(fishBoxCard);
 
-  const capturedTotal = sumCapturedIds(fishBoxCard.capturedIds);
-  const detail = fishBoxCard.capturedIds.length > 0 ? `得点候補 ${capturedTotal} 点を持ちました。` : "何も食べられず、得点候補はありません。";
+  startFishEntryMotion(fishBoxCard, liveBeforeIds, cameraFrom);
+  const capturedTotal = sumCapturedIds(fishBoxCard.capturedIds, fishBoxCard.ownerId);
+  const predator = fishBoxCard.consumedById ? getBoxCard(fishBoxCard.consumedById) : null;
+  const detail = predator?.type === "fish"
+    ? `魚「${card.value}」は、先にいた魚「${predator.value}」に食べられました。`
+    : fishBoxCard.capturedIds.length > 0
+      ? capturedTotal > 0
+        ? `自分のカードを除き、得点候補 ${capturedTotal} 点を持ちました。`
+        : "魚を食べましたが、自分のカードだけなので得点候補は0点です。"
+      : "何も食べられず、得点候補はありません。";
   addLog(`${player.name} が${getFishCardLabel(card)}を出しました。${detail}`);
   render();
+}
+
+function startFishEntryMotion(
+  fish: FishBoxCard,
+  liveBeforeIds: Set<number>,
+  cameraFrom: number
+): void {
+  const predatorId = fish.consumedById ?? (fish.capturedIds.length > 0 ? fish.boxId : null);
+  const newlyConsumedIds = predatorId === null
+    ? []
+    : [...liveBeforeIds].filter((boxId) => {
+        const card = getBoxCard(boxId);
+        return (card?.type === "bait" || card?.type === "fish") && card.consumedById === predatorId;
+      });
+  const preyIds = fish.consumedById
+    ? [fish.boxId, ...newlyConsumedIds]
+    : newlyConsumedIds;
+
+  startMouthFishMotion({
+    enteringId: fish.boxId,
+    predatorId,
+    preyIds: [...new Set(preyIds)],
+    cameraFrom,
+    cameraTo: getMouthCameraZoom()
+  });
 }
 
 function getFishCardLabel(card: FishCard | FishBoxCard): string {
@@ -1054,6 +1113,7 @@ function playPoison(player: Player, slotIndex: number): void {
 
   if (!card || card.type !== "poison") return;
 
+  const cameraZoom = getMouthCameraZoom();
   const previousPoison = activePoison;
 
   if (previousPoison) {
@@ -1076,6 +1136,13 @@ function playPoison(player: Player, slotIndex: number): void {
     ownerId: player.id,
     ownerName: player.name
   };
+  startMouthFishMotion({
+    enteringId: poisonBoxCard.boxId,
+    predatorId: null,
+    preyIds: [],
+    cameraFrom: cameraZoom,
+    cameraTo: cameraZoom
+  });
   startPoisonRemovalTimer();
   const takeoverText = previousPoison ? `${previousPoison.ownerName} から得点の権利を奪いました。` : "";
   addLog(`${player.name} が毒魚を入れました。${takeoverText}親は3秒以内に取り除く必要があります。`);
@@ -1083,6 +1150,8 @@ function playPoison(player: Player, slotIndex: number): void {
 }
 
 function escapeWithCard(playerId: string, slotIndex: number): void {
+  if (mouthFishMotion) return;
+
   const player = getPlayer(playerId);
 
   if (player.role !== "child") return;
@@ -1117,7 +1186,7 @@ function escapeWithCard(playerId: string, slotIndex: number): void {
     return;
   }
 
-  const total = sumCapturedIds(target.capturedIds);
+  const total = sumCapturedIds(target.capturedIds, player.id);
   target.escaped = true;
   player.score += total;
   tryEndReason = "escape";
@@ -1149,15 +1218,38 @@ function markPoisonResolved(boxId: number, status: Exclude<PoisonCardStatus, "ac
 }
 
 function getParentCloseTotal(): number {
-  return getBoardParentCloseTotal(boxCards);
+  return getBoardParentCloseTotal(boxCards, getParent().id);
 }
 
-function getCardsInMouth(): BoxCard[] {
-  return getBoardCardsInMouth(boxCards);
+function getLiveMouthNumericCards(): Array<BaitBoxCard | FishBoxCard> {
+  return boxCards.filter((card): card is BaitBoxCard | FishBoxCard => {
+    if (card.type === "bait") return card.consumedById === null;
+    if (card.type !== "fish") return false;
+    return (
+      card.consumedById === null &&
+      !card.invalidatedByOwnPoison &&
+      !card.poisonScoredById &&
+      !card.escaped
+    );
+  });
 }
 
-function sumCapturedIds(cardIds: number[]): number {
-  return sumBoardCapturedIds(boxCards, cardIds);
+function getMouthCameraZoom(): number {
+  const largestValue = getLiveMouthNumericCards().reduce(
+    (largest, card) => Math.max(largest, card.value),
+    1
+  );
+
+  if (largestValue <= 1) return 1.95;
+  if (largestValue === 2) return 1.68;
+  if (largestValue === 3) return 1.42;
+  if (largestValue === 4) return 1.18;
+  if (largestValue === 5) return 0.98;
+  return 0.84;
+}
+
+function sumCapturedIds(cardIds: number[], scoringPlayerId: string): number {
+  return sumBoardCapturedIds(boxCards, cardIds, scoringPlayerId);
 }
 
 function getParent(): Player {
@@ -1260,7 +1352,7 @@ function scheduleNpcAutomation(): void {
 
   if (gameMode === "online" && onlineRole !== "host") return;
 
-  if (isGameOver || isTryEnded) return;
+  if (isGameOver || isTryEnded || mouthFishMotion) return;
 
   if (!isMouthOpen) {
     npcParentCloseAt = null;
@@ -1360,7 +1452,7 @@ function scheduleNpcChildAction(): void {
 
 function chooseNpcChildAction(player: Player): NpcChildAction | null {
   const candidate = getPlayerCandidates(player.id).at(-1);
-  const candidateTotal = candidate ? sumCapturedIds(candidate.capturedIds) : 0;
+  const candidateTotal = candidate ? sumCapturedIds(candidate.capturedIds, player.id) : 0;
   const escapeSlot = getNpcEscapeSlot(player);
 
   if (candidate && escapeSlot !== null) {
@@ -1402,7 +1494,7 @@ function chooseNpcChildAction(player: Player): NpcChildAction | null {
     }
 
     const rankedFish = fishSlots
-      .map((item) => ({ ...item, gain: estimateFishCaptureValue(item.card.value) }))
+      .map((item) => ({ ...item, gain: estimateFishCaptureValue(item.card.value, player.id) }))
       .sort((left, right) => right.gain - left.gain || right.card.value - left.card.value);
     const usefulFish = rankedFish.filter((item) => item.gain > 0);
 
@@ -1446,8 +1538,8 @@ function getNpcStackPair(player: Player): { sourceSlotIndex: number; targetSlotI
   return null;
 }
 
-function estimateFishCaptureValue(value: FishValue): number {
-  return estimateBoardFishCaptureValue(boxCards, value);
+function estimateFishCaptureValue(value: FishValue, scoringPlayerId: string): number {
+  return estimateBoardFishCaptureValue(boxCards, value, scoringPlayerId);
 }
 
 function shouldPlayPoisonNow(): boolean {
@@ -1528,6 +1620,28 @@ function clearBiteAftermath(): void {
   }
 
   biteAftermath = null;
+}
+
+function startMouthFishMotion(motion: MouthFishMotion): void {
+  clearMouthFishMotion();
+
+  if (prefersReducedMotion() && gameMode !== "online") return;
+
+  mouthFishMotion = motion;
+  mouthFishMotionTimerId = window.setTimeout(() => {
+    mouthFishMotion = null;
+    mouthFishMotionTimerId = null;
+    render();
+  }, mouthFishMotionDurationMs + Math.max(0, motion.preyIds.length - 1) * 70);
+}
+
+function clearMouthFishMotion(): void {
+  if (mouthFishMotionTimerId !== null) {
+    window.clearTimeout(mouthFishMotionTimerId);
+    mouthFishMotionTimerId = null;
+  }
+
+  mouthFishMotion = null;
 }
 
 function startTryReplay(): void {
@@ -1614,6 +1728,7 @@ function getOnlineState(): OnlineGameState {
     isTryEnded,
     biteAftermath,
     isTryReplayActive,
+    mouthFishMotion,
     isGameOver,
     logEntries,
     poisonDeadlineAt,
@@ -1640,6 +1755,8 @@ function applyOnlineState(state: OnlineGameState): void {
   isTryEnded = state.isTryEnded;
   biteAftermath = state.biteAftermath ?? null;
   isTryReplayActive = Boolean(state.isTryReplayActive && !prefersReducedMotion());
+  clearMouthFishMotion();
+  mouthFishMotion = state.mouthFishMotion ?? null;
   isGameOver = state.isGameOver;
   logEntries = state.logEntries;
   poisonDeadlineAt = state.poisonDeadlineAt;
@@ -1731,7 +1848,7 @@ function render(): void {
             ${renderStat("親ラウンド", `${Math.min(completedParentRounds + 1, playerCount)}/${playerCount}`)}
             ${renderStat("トライ", `${currentTry}/${maxTriesPerParent}`)}
             ${renderStat("口", getMouthStatusLabel())}
-            ${renderStat("口内カード", `${getCardsInMouth().length}枚`)}
+            ${renderStat("泳ぐ魚", `${getLiveMouthNumericCards().filter((card) => card.type === "fish").length}匹`)}
           </div>
         </header>
 
@@ -1927,13 +2044,16 @@ function renderRulesSummary(): string {
         <ul>
           <li>親1人につき必ず3トライ行い、その後に親を交代します。</li>
           <li>山札と公開札はトライ間で引き継ぎ、親交代時に補給します。</li>
-          <li>箱のカードは先に出たものから並び、直前から逆順に捕食を判定します。</li>
-          <li>箱のカードは表向きに重ね、一番上だけ内容が見える状態にします。終了後に全カードの順番と終了位置を公開します。</li>
+          <li>魚を出すと直前から逆順に比べ、大きい魚が小さい魚を食べます。先に大きい魚がいた場合は、後から出した小さい魚が食べられます。</li>
+          <li>同じ数字では捕食が止まります。食べられた魚が抱えていた魚も、まとめて大きい魚へ引き継がれます。</li>
+          <li>口の中ではカードの代わりに魚が泳ぎ、小さい魚だけの時はカメラが寄り、大きい魚が出るほどズームアウトします。</li>
           <li>魚は数字に関係なく出せます。</li>
           <li>口が開いている間、同じ2同士または3同士をドラッグして重ねると群れになります。2の群れは強さ4、3の群れは強さ6です。</li>
           <li>群れを作って空いた公開枠には、山札があれば即座に1枚補充します。群れは1枚の魚として出し、再び重ねたり分けたりはできません。</li>
-          <li>逃げ成功時は、魚自身ではなく食べたカードだけを得点します。</li>
-          <li>親が閉じたら、毒魚・逃げる・毒魚で得点化済みの魚を除いた数字カードを得点します。</li>
+          <li>得点時は、得点する人自身が出したカードを除き、食べた数字カードを得点します。</li>
+          <li>逃げ成功時は、逃げる魚自身と同じ子が以前に出した魚を除いて得点します。</li>
+          <li>最初の餌「1」は親自身のカードです。ほかに魚がいないまま親が閉じても0点です。</li>
+          <li>親が閉じたら、自身の餌・毒魚・逃げる・毒魚で得点化済みの魚を除いた数字カードを得点します。</li>
         </ul>
       </div>
       <div>
@@ -1991,7 +2111,7 @@ function renderParentOptions(): string {
 function renderParentControls(showRoundActions = true): string {
   const parentIsHuman = isHumanParent();
   const canOpen = parentIsHuman && !isGameOver && !isMouthOpen && !isTryEnded;
-  const canClose = parentIsHuman && !isGameOver && isMouthOpen;
+  const canClose = parentIsHuman && !isGameOver && isMouthOpen && !mouthFishMotion;
   const canRemovePoison = parentIsHuman && !isGameOver && isMouthOpen && activePoison;
   const parent = getParent();
 
@@ -2073,7 +2193,7 @@ function renderTryReplayOverlay(): string {
         <button class="text-button try-replay-skip" type="button" data-action="skip-try-replay">スキップ</button>
       </div>
       <p id="try-replay-description" class="try-replay-description">
-        カードが出た順に現れ、大きな魚が小さな魚を食べた流れを再生します。
+        魚が泳いで現れ、大きな魚が小さな魚を食べた流れを再生します。
       </p>
       <div class="try-replay-stage">
         <div class="try-replay-callout-layer" aria-hidden="true">
@@ -2092,7 +2212,7 @@ function renderTryReplayOverlay(): string {
         <div
           class="try-replay-track"
           style="--replay-slots: ${Math.max(slotCount, 1)}"
-          aria-label="カードの投入と捕食の順番"
+          aria-label="魚の登場と捕食の順番"
         >
           ${orderedCards
             .map((card, index) => {
@@ -2246,7 +2366,7 @@ function buildTryReplayEvents(): TryReplayEvent[] {
         events.push({
           kind: "escape",
           fishId: escapeTarget.boxId,
-          points: sumTryReplayValues(targetState.capturedIds, numericStates)
+          points: sumTryReplayValues(targetState.capturedIds, numericStates, escapeTarget.ownerId)
         });
       }
       continue;
@@ -2299,7 +2419,27 @@ function buildTryReplayEvents(): TryReplayEvent[] {
       if (!targetState || targetState.consumedById !== null) continue;
       if (target.type === "fish" && target.invalidatedByOwnPoison) continue;
       if (target.type === "fish" && target.poisonScoredById) break;
-      if (target.value >= card.value) break;
+      if (target.value === card.value) break;
+
+      if (target.value > card.value) {
+        const bundleIds = [card.boxId, ...newFishState.capturedIds];
+        events.push({
+          kind: "eat",
+          predatorId: target.boxId,
+          preyId: card.boxId,
+          bundleIds,
+          points: sumTryReplayValues(bundleIds, numericStates, targetState.card.ownerId)
+        });
+
+        for (const capturedId of bundleIds) {
+          const capturedState = numericStates.get(capturedId);
+          if (capturedState) capturedState.consumedById = target.boxId;
+        }
+
+        targetState.capturedIds = [...new Set([...targetState.capturedIds, ...bundleIds])];
+        newFishState.capturedIds = [];
+        break;
+      }
 
       const bundleIds = [target.boxId, ...targetState.capturedIds];
       events.push({
@@ -2307,7 +2447,7 @@ function buildTryReplayEvents(): TryReplayEvent[] {
         predatorId: card.boxId,
         preyId: target.boxId,
         bundleIds,
-        points: sumTryReplayValues(bundleIds, numericStates)
+        points: sumTryReplayValues(bundleIds, numericStates, card.ownerId)
       });
 
       for (const capturedId of bundleIds) {
@@ -2341,32 +2481,38 @@ function buildTryReplayEvents(): TryReplayEvent[] {
   return events;
 }
 
-function sumTryReplayValues(cardIds: number[], numericStates: Map<number, TryReplayNumericState>): number {
-  return cardIds.reduce((total, cardId) => total + (numericStates.get(cardId)?.card.value ?? 0), 0);
+function sumTryReplayValues(
+  cardIds: number[],
+  numericStates: Map<number, TryReplayNumericState>,
+  scoringPlayerId: string
+): number {
+  return cardIds.reduce((total, cardId) => {
+    const card = numericStates.get(cardId)?.card;
+    return total + (card && card.ownerId !== scoringPlayerId ? card.value : 0);
+  }, 0);
 }
 
 function renderTryReplayCard(card: BoxCard): string {
-  if (card.type === "bait") {
-    return renderBoxCard({ ...card, consumedById: null });
+  if (card.type === "escape") {
+    return `
+      <div class="try-replay-fish is-escape-effect" aria-label="${card.ownerName}の逃げる">
+        <span aria-hidden="true">≋</span>
+        <strong>逃げる</strong>
+      </div>
+    `;
   }
 
-  if (card.type === "fish") {
-    return renderBoxCard({
-      ...card,
-      consumedById: null,
-      capturedIds: [],
-      poisonScoredById: null,
-      poisonScoredByName: null,
-      invalidatedByOwnPoison: false,
-      escaped: false
-    });
-  }
+  const typeClass = card.type === "bait"
+    ? "is-bait"
+    : card.type === "poison"
+      ? "is-poison"
+      : `value-${card.value}${card.schoolSize === 2 ? " is-school" : ""}`;
 
-  if (card.type === "poison") {
-    return renderBoxCard({ ...card, status: "active" });
-  }
-
-  return renderBoxCard({ ...card, successful: false });
+  return `
+    <div class="try-replay-fish ${typeClass}" aria-label="${getMouthFishActorLabel(card)}">
+      ${renderMouthFishVisual(card)}
+    </div>
+  `;
 }
 
 function getTryReplayEventLabel(event: ScheduledTryReplayEvent): string {
@@ -2404,25 +2550,24 @@ function getBoxCard(boxId: number): BoxCard | null {
 
 function getTryReplayCardLabel(card: BoxCard | null): string {
   if (!card) return "カード";
-  if (card.type === "bait") return "餌1";
+  if (card.type === "bait") return "親の餌1";
   if (card.type === "fish") return card.schoolBaseValue ? `${card.schoolBaseValue}の群れ` : `魚${card.value}`;
   if (card.type === "poison") return "毒魚";
   return "逃げるカード";
 }
 
 function getTryReplayCardOwner(card: BoxCard | null): string {
-  if (!card || card.type === "bait") return "親";
+  if (!card) return "親";
   return card.ownerName;
 }
 
 function getTryReplayOwnerLabel(card: BoxCard): string {
-  if (card.type === "bait") return "最初の餌";
+  if (card.type === "bait") return `${card.ownerName}の餌`;
   return card.ownerName;
 }
 
 function isParentScoringBundle(card: BoxCard): boolean {
-  if (card.type === "bait") return card.consumedById === null;
-  if (card.type !== "fish") return false;
+  if (card.type !== "fish" || card.ownerId === getParent().id) return false;
   return (
     card.consumedById === null &&
     !card.poisonScoredById &&
@@ -2515,7 +2660,7 @@ function renderTryEndMarker(): string {
 }
 
 function getTryOrderLabel(card: BoxCard): string {
-  if (card.type === "bait") return "餌 1";
+  if (card.type === "bait") return `${card.ownerName}の餌 1`;
   if (card.type === "poison") return `${card.ownerName} 毒魚`;
   if (card.type === "escape") return `${card.ownerName} 逃げる`;
   return `${card.ownerName} ${getFishCardLabel(card)}`;
@@ -2523,7 +2668,9 @@ function getTryOrderLabel(card: BoxCard): string {
 
 function getTryOrderDetail(card: BoxCard): string {
   if (card.type === "bait") {
-    return card.consumedById ? `魚${getEatingFishValue(card.consumedById)}に食べられた` : "箱に残った";
+    return card.consumedById
+      ? `魚${getEatingFishValue(card.consumedById)}に食べられた`
+      : `${card.ownerName}自身の餌・0点`;
   }
 
   if (card.type === "poison") {
@@ -2545,14 +2692,14 @@ function getTryOrderDetail(card: BoxCard): string {
   }
 
   if (card.escaped) {
-    return `逃げ成功 ${sumCapturedIds(card.capturedIds)}点`;
+    return `逃げ成功 ${sumCapturedIds(card.capturedIds, card.ownerId)}点`;
   }
 
   if (card.consumedById) {
     return `魚${getEatingFishValue(card.consumedById)}に食べられた`;
   }
 
-  const candidateTotal = sumCapturedIds(card.capturedIds);
+  const candidateTotal = sumCapturedIds(card.capturedIds, card.ownerId);
   return candidateTotal > 0 ? `未確定候補 ${candidateTotal}点` : "得点候補なし";
 }
 
@@ -2578,7 +2725,7 @@ function renderRoundActionButtons(): string {
 }
 
 function renderMouth(): string {
-  const cardsInMouth = getCardsInMouth();
+  const liveFishCount = getLiveMouthNumericCards().filter((card) => card.type === "fish").length;
   const mouthClass = isMouthOpen
     ? "is-open"
     : biteAftermath
@@ -2598,13 +2745,11 @@ function renderMouth(): string {
       </div>
       <div class="mouth-cavity">
         <div class="cavity-meta">
-          <span>口の中 ${cardsInMouth.length}枚</span>
+          <span>泳いでいる魚 ${liveFishCount}匹</span>
           <span>${activePoison ? `毒魚: ${activePoison.ownerName}` : "毒魚なし"}</span>
           ${activePoison ? `<small class="poison-countdown" data-poison-countdown>${getPoisonCountdownLabel()}</small>` : ""}
         </div>
-        <div class="mouth-card-stack" aria-label="口の中にカードが${cardsInMouth.length}枚あります。一番上のカードを表示しています">
-          ${cardsInMouth.map((card, index) => renderBoxCard(card, index < cardsInMouth.length - 1)).join("")}
-        </div>
+        ${renderMouthFishScene()}
       </div>
       <div class="jaw jaw-bottom" aria-hidden="true">
         <span></span><span></span><span></span><span></span><span></span>
@@ -2612,6 +2757,182 @@ function renderMouth(): string {
       ${biteAftermath ? `<div class="bite-aftermath-badge" role="status" aria-live="polite">${aftermathMessage}</div>` : ""}
     </div>
   `;
+}
+
+function renderMouthFishScene(): string {
+  const liveIds = new Set(getLiveMouthNumericCards().map((card) => card.boxId));
+  const motionIds = new Set(
+    mouthFishMotion
+      ? [mouthFishMotion.enteringId, mouthFishMotion.predatorId, ...mouthFishMotion.preyIds].filter(
+          (boxId): boxId is number => boxId !== null
+        )
+      : []
+  );
+  const actors = boxCards
+    .filter((card) => {
+      if (card.type === "bait" || card.type === "fish") {
+        return liveIds.has(card.boxId) || motionIds.has(card.boxId);
+      }
+      return card.type === "poison" && (card.status === "active" || motionIds.has(card.boxId));
+    })
+    .sort((left, right) => left.sequence - right.sequence);
+  const cameraFrom = mouthFishMotion?.cameraFrom ?? getMouthCameraZoom();
+  const cameraTo = mouthFishMotion?.cameraTo ?? getMouthCameraZoom();
+  const cameraLabel = cameraTo >= 1.4
+    ? "小さな魚をアップ"
+    : cameraTo < 1
+      ? "大きな魚までワイド"
+      : "魚を追跡中";
+  const predator = mouthFishMotion?.predatorId ? getBoxCard(mouthFishMotion.predatorId) : null;
+  const predatorPosition = predator ? getMouthFishPosition(predator) : null;
+
+  return `
+    <div class="mouth-fish-stage" role="group" aria-label="口の中を泳ぐ魚">
+      <div
+        class="mouth-fish-world ${mouthFishMotion ? "is-camera-moving" : ""}"
+        style="--camera-from:${cameraFrom}; --camera-to:${cameraTo}; --mouth-zoom:${cameraTo}"
+      >
+        <span class="water-bubble bubble-one" aria-hidden="true"></span>
+        <span class="water-bubble bubble-two" aria-hidden="true"></span>
+        <span class="water-bubble bubble-three" aria-hidden="true"></span>
+        ${actors.map(renderMouthFishActor).join("")}
+        ${
+          predatorPosition && mouthFishMotion?.preyIds.length
+            ? `<span class="mouth-chomp-burst" style="--burst-x:${predatorPosition.x}%; --burst-y:${predatorPosition.y}%" aria-hidden="true">パクッ!</span>`
+            : ""
+        }
+      </div>
+      <span class="mouth-camera-readout" aria-hidden="true">${cameraLabel} · ×${cameraTo.toFixed(2)}</span>
+      ${
+        mouthFishMotion
+          ? `<span class="visually-hidden" role="status" aria-live="polite">${getMouthFishMotionAnnouncement()}</span>`
+          : ""
+      }
+    </div>
+  `;
+}
+
+function renderMouthFishActor(card: BoxCard): string {
+  if (card.type === "escape") return "";
+
+  const position = getMouthFishPosition(card);
+  const predator = mouthFishMotion?.predatorId ? getBoxCard(mouthFishMotion.predatorId) : null;
+  const targetPosition = predator ? getMouthFishPosition(predator) : position;
+  const preyIndex = mouthFishMotion?.preyIds.indexOf(card.boxId) ?? -1;
+  const isEntering = mouthFishMotion?.enteringId === card.boxId;
+  const isPredator = mouthFishMotion?.predatorId === card.boxId && preyIndex < 0;
+  const motionClass = [
+    isEntering ? "is-entering" : "",
+    preyIndex >= 0 ? "is-prey" : "",
+    isEntering && preyIndex >= 0 ? "is-entering-prey" : "",
+    isPredator ? "is-predator" : ""
+  ].filter(Boolean).join(" ");
+  const delay = Math.max(0, preyIndex) * 70;
+  const style = [
+    `--actor-x:${position.x}%`,
+    `--actor-y:${position.y}%`,
+    `--target-x:${targetPosition.x}%`,
+    `--target-y:${targetPosition.y}%`,
+    `--fish-size:${getMouthFishSize(card)}%`,
+    `--motion-delay:${delay}ms`
+  ].join("; ");
+  const statusClass = card.type === "fish"
+    ? [
+        card.invalidatedByOwnPoison ? "is-ineffective" : "",
+        card.poisonScoredById ? "is-poison-scored" : "",
+        card.schoolSize === 2 ? "is-school" : ""
+      ].filter(Boolean).join(" ")
+    : card.type === "poison"
+      ? "is-poison"
+      : "is-bait";
+
+  return `
+    <article
+      class="mouth-fish-actor ${statusClass} ${card.type === "fish" ? `value-${card.value}` : ""} ${motionClass}"
+      style="${style}"
+      aria-label="${getMouthFishActorLabel(card)}"
+    >
+      <div class="mouth-fish-body">
+        ${renderMouthFishVisual(card)}
+      </div>
+    </article>
+  `;
+}
+
+function renderMouthFishVisual(card: BaitBoxCard | FishBoxCard | PoisonBoxCard): string {
+  if (card.type === "bait") {
+    return `
+      <span class="bait-sprite" aria-hidden="true"><i></i><i></i><i></i></span>
+      <span class="mouth-fish-value">1</span>
+    `;
+  }
+
+  const artPath = card.type === "poison"
+    ? "./assets/cards/poison-fish.png"
+    : fishArtPaths[card.schoolBaseValue ?? card.value];
+  const valueBadge = card.type === "fish"
+    ? `<span class="mouth-fish-value">${card.value}</span>`
+    : '<span class="mouth-fish-value is-poison-mark">&#9760;</span>';
+  const schoolMate = card.type === "fish" && card.schoolSize === 2
+    ? `<span class="mouth-fish-cutout is-school-mate" aria-hidden="true"><img src="${artPath}" alt=""></span>`
+    : "";
+
+  return `
+    ${schoolMate}
+    <span class="mouth-fish-cutout" aria-hidden="true"><img src="${artPath}" alt=""></span>
+    ${valueBadge}
+    <span class="mouth-fish-owner">${card.ownerName}</span>
+  `;
+}
+
+function getMouthFishPosition(card: BoxCard): { x: number; y: number } {
+  if (card.type === "bait") return { x: 42, y: 58 };
+
+  const positions = [
+    { x: 55, y: 50 },
+    { x: 36, y: 38 },
+    { x: 67, y: 64 },
+    { x: 31, y: 68 },
+    { x: 70, y: 34 },
+    { x: 48, y: 29 },
+    { x: 51, y: 72 },
+    { x: 25, y: 50 },
+    { x: 76, y: 53 }
+  ];
+  return positions[Math.abs(card.sequence - 2) % positions.length];
+}
+
+function getMouthFishSize(card: BoxCard): number {
+  if (card.type === "bait") return 8;
+  if (card.type === "poison") return 31;
+  if (card.type !== "fish") return 12;
+  if (card.value === 2) return 24;
+  if (card.value === 3) return 29;
+  if (card.value === 4) return 35;
+  if (card.value === 5) return 43;
+  return 50;
+}
+
+function getMouthFishActorLabel(card: BoxCard): string {
+  if (card.type === "bait") return `${card.ownerName}の餌、1`;
+  if (card.type === "poison") return `${card.ownerName}の毒魚`;
+  if (card.type === "escape") return `${card.ownerName}の逃げる`;
+  const schoolText = card.schoolSize === 2 ? "の群れ" : "";
+  return `${card.ownerName}の魚${schoolText}、強さ${card.value}`;
+}
+
+function getMouthFishMotionAnnouncement(): string {
+  if (!mouthFishMotion) return "";
+
+  const entering = getBoxCard(mouthFishMotion.enteringId);
+  const predator = mouthFishMotion.predatorId ? getBoxCard(mouthFishMotion.predatorId) : null;
+  const prey = mouthFishMotion.preyIds.map(getBoxCard).filter((card): card is BoxCard => card !== null);
+
+  if (predator && prey.length > 0) {
+    return `${getMouthFishActorLabel(predator)}が、${prey.map(getMouthFishActorLabel).join("と")}を食べました。`;
+  }
+
+  return entering ? `${getMouthFishActorLabel(entering)}が泳いできました。` : "";
 }
 
 function renderBoxCard(card: BoxCard, concealed = false): string {
@@ -2729,7 +3050,7 @@ function renderChildPanel(player: Player, index: number, variant: "opponent" | "
   const candidateText = hasNoCards
     ? "山札切れ・この親ラウンドでは行動終了"
     : latestCandidate
-    ? `逃げ対象: ${getFishCardLabel(latestCandidate)} / ${sumCapturedIds(latestCandidate.capturedIds)}点`
+    ? `逃げ対象: ${getFishCardLabel(latestCandidate)} / ${sumCapturedIds(latestCandidate.capturedIds, player.id)}点`
     : "有効な得点候補なし";
 
   return `
@@ -2764,7 +3085,12 @@ function renderHandSlot(player: Player, card: PlayerCard | null, slotIndex: numb
     return '<div class="hand-slot"><div class="play-card empty-card"><span>空</span></div></div>';
   }
 
-  const canUse = (gameMode === "pvp" || player.id === localPlayerId) && player.role === "child" && isMouthOpen && !isGameOver;
+  const canUse =
+    (gameMode === "pvp" || player.id === localPlayerId) &&
+    player.role === "child" &&
+    isMouthOpen &&
+    !isGameOver &&
+    !mouthFishMotion;
   const ownPoisonMakesFishIneffective = card.type === "fish" && activePoison?.ownerId === player.id;
   const fishLabel = card.type === "fish" ? getFishCardLabel(card) : "";
   const playLabel = ownPoisonMakesFishIneffective
@@ -2786,7 +3112,7 @@ function renderHandSlot(player: Player, card: PlayerCard | null, slotIndex: numb
   const valueLabel = card.type === "poison" ? "" : String(card.value);
   const artValue = card.type === "fish" ? (card.schoolBaseValue ?? card.value) : null;
   const escapeCandidate = getPlayerCandidates(player.id).at(-1);
-  const escapePoints = escapeCandidate ? sumCapturedIds(escapeCandidate.capturedIds) : 0;
+  const escapePoints = escapeCandidate ? sumCapturedIds(escapeCandidate.capturedIds, player.id) : 0;
   const escapeLabel = escapeCandidate ? `裏で逃げる ${escapePoints}点` : "裏で逃げる（効果なし）";
 
   return `
