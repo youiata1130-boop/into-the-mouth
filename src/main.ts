@@ -39,6 +39,23 @@ type GameEffect = {
 };
 type TryEndReason = "parent-close" | "escape" | "poison-timeout";
 type BiteAftermath = "fed" | "poisoned";
+type TryReplayEvent =
+  | { kind: "play"; boxId: number }
+  | { kind: "eat"; predatorId: number; preyId: number; bundleIds: number[]; points: number }
+  | { kind: "poison"; poisonId: number; outcome: "triggered" | "removed" | "overridden" | "cancelled"; points: number }
+  | { kind: "escape"; fishId: number; points: number }
+  | { kind: "ineffective"; boxId: number; reason: "own-poison" | "escape-failed" };
+type ScheduledTryReplayEvent = TryReplayEvent & { at: number };
+type TryReplayNumericState = {
+  card: BaitBoxCard | FishBoxCard;
+  capturedIds: number[];
+  consumedById: number | null;
+};
+type TryReplaySchedule = {
+  events: ScheduledTryReplayEvent[];
+  finalAt: number;
+  duration: number;
+};
 type GameMode = "pvp" | "cpu" | "online";
 type OnlineRole = "none" | "host" | "guest";
 type CpuDifficulty = "easy" | "normal" | "hard";
@@ -69,6 +86,7 @@ type OnlineGameState = {
   isMouthOpen: boolean;
   isTryEnded: boolean;
   biteAftermath: BiteAftermath | null;
+  isTryReplayActive: boolean;
   isGameOver: boolean;
   logEntries: string[];
   poisonDeadlineAt: number | null;
@@ -122,6 +140,8 @@ let isMouthOpen = false;
 let isTryEnded = false;
 let biteAftermath: BiteAftermath | null = null;
 let biteAftermathTimerId: number | null = null;
+let isTryReplayActive = false;
+let tryReplayTimerId: number | null = null;
 let isGameOver = false;
 let logEntries: string[] = [];
 let npcChildTimerId: number | null = null;
@@ -151,6 +171,7 @@ const simpleActions: Record<string, () => void> = {
   "apply-setup": applySetup,
   "open-mouth": openMouth,
   "close-mouth": closeMouth,
+  "skip-try-replay": skipTryReplay,
   "remove-poison": removeActivePoison,
   "next-try": prepareNextTry,
   "advance-parent": advanceParent,
@@ -514,6 +535,7 @@ function returnToTitle(): void {
   clearNpcTimers();
   clearPoisonRemovalTimer();
   clearBiteAftermath();
+  clearTryReplay();
   destroyOnlineSession();
   hasStarted = false;
   onlineLobbyOpen = false;
@@ -801,6 +823,7 @@ function resetTryBox(): void {
   clearNpcTimers();
   clearPoisonRemovalTimer();
   clearBiteAftermath();
+  clearTryReplay();
   nextSequence = 1;
   boxCards = [createBaitBoxCard()];
   tryStartScores = Object.fromEntries(players.map((player) => [player.id, player.score]));
@@ -1101,7 +1124,7 @@ function escapeWithCard(playerId: string, slotIndex: number): void {
   showEscapeSuccessEffect();
   addLog(`${player.name} が逃げに成功しました。最新の得点候補から ${total} 点を確定し、このトライは終了です。`);
   finishTry();
-  render();
+  startTryReplay();
 }
 
 function resolvePredation(newFish: FishBoxCard): number[] {
@@ -1215,7 +1238,7 @@ function resolveExpiredPoison(poisonBoxId: number): void {
   clearPoisonRemovalTimer();
   addLog(`毒魚を時間内に取り除けませんでした。${expiredPoison.ownerName} が10点を獲得し、親は0点です。`);
   finishTry();
-  render();
+  startTryReplay();
 }
 
 function updatePoisonCountdownDisplay(): void {
@@ -1494,7 +1517,7 @@ function startBiteAftermath(kind: BiteAftermath): void {
   biteAftermathTimerId = window.setTimeout(() => {
     biteAftermath = null;
     biteAftermathTimerId = null;
-    render();
+    startTryReplay();
   }, biteAftermathDurationMs);
 }
 
@@ -1505,6 +1528,44 @@ function clearBiteAftermath(): void {
   }
 
   biteAftermath = null;
+}
+
+function startTryReplay(): void {
+  clearTryReplay();
+
+  if (prefersReducedMotion()) {
+    render();
+    return;
+  }
+
+  isTryReplayActive = true;
+  const { duration } = getTryReplaySchedule();
+  render();
+
+  tryReplayTimerId = window.setTimeout(() => {
+    isTryReplayActive = false;
+    tryReplayTimerId = null;
+    render();
+  }, duration);
+}
+
+function skipTryReplay(): void {
+  if (!isTryReplayActive) return;
+  clearTryReplay();
+  render();
+}
+
+function clearTryReplay(): void {
+  if (tryReplayTimerId !== null) {
+    window.clearTimeout(tryReplayTimerId);
+    tryReplayTimerId = null;
+  }
+
+  isTryReplayActive = false;
+}
+
+function prefersReducedMotion(): boolean {
+  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 
 function showEscapeSuccessEffect(): void {
@@ -1552,6 +1613,7 @@ function getOnlineState(): OnlineGameState {
     isMouthOpen,
     isTryEnded,
     biteAftermath,
+    isTryReplayActive,
     isGameOver,
     logEntries,
     poisonDeadlineAt,
@@ -1577,6 +1639,7 @@ function applyOnlineState(state: OnlineGameState): void {
   isMouthOpen = state.isMouthOpen;
   isTryEnded = state.isTryEnded;
   biteAftermath = state.biteAftermath ?? null;
+  isTryReplayActive = Boolean(state.isTryReplayActive && !prefersReducedMotion());
   isGameOver = state.isGameOver;
   logEntries = state.logEntries;
   poisonDeadlineAt = state.poisonDeadlineAt;
@@ -1607,6 +1670,7 @@ function render(): void {
 
   const rulesWereOpen = appRoot.querySelector<HTMLDetailsElement>(".rules-panel")?.open ?? false;
   const resultWasVisible = appRoot.querySelector(".try-result-panel") !== null;
+  const replayWasVisible = appRoot.querySelector(".try-replay-panel") !== null;
   const focusedControl = getFocusedControlIdentity();
   const focusedChild = getFocusedChild();
   const opponentChildren = getOpponentChildren(focusedChild?.id ?? null);
@@ -1646,7 +1710,13 @@ function render(): void {
           ${focusedChild ? renderChildPanel(focusedChild, getChildIndex(focusedChild), "self") : renderHumanParentSeat()}
         </section>
 
-        ${isTryEnded && !biteAftermath ? renderTryResultOverlay() : ""}
+        ${
+          isTryReplayActive
+            ? renderTryReplayOverlay()
+            : isTryEnded && !biteAftermath
+              ? renderTryResultOverlay()
+              : ""
+        }
       </section>
 
       <section class="detail-screen" id="details" aria-label="詳細情報"${isTryEnded ? " inert" : ""}>
@@ -1697,8 +1767,11 @@ function render(): void {
   const rulesPanel = appRoot.querySelector<HTMLDetailsElement>(".rules-panel");
   if (rulesPanel) rulesPanel.open = rulesWereOpen;
 
+  const replayPanel = appRoot.querySelector<HTMLElement>(".try-replay-panel");
   const resultPanel = appRoot.querySelector<HTMLElement>(".try-result-panel");
-  if (resultPanel && !resultWasVisible) {
+  if (replayPanel && !replayWasVisible) {
+    replayPanel.focus({ preventScroll: true });
+  } else if (resultPanel && !resultWasVisible) {
     resultPanel.focus({ preventScroll: true });
   } else {
     restoreFocusedControl(appRoot, focusedControl);
@@ -1951,6 +2024,420 @@ function renderRoundControls(): string {
       </div>
     </section>
   `;
+}
+
+function renderTryReplayOverlay(): string {
+  const orderedCards = [...boxCards].sort((left, right) => left.sequence - right.sequence);
+  const schedule = getTryReplaySchedule();
+  const cardIndexById = new Map(orderedCards.map((card, index) => [card.boxId, index]));
+  const playTimes = new Map<number, number>();
+  const eatenEvents = new Map<number, Extract<ScheduledTryReplayEvent, { kind: "eat" }>>();
+  const escapeEvents = new Map<number, Extract<ScheduledTryReplayEvent, { kind: "escape" }>>();
+  const poisonEvents = new Map<number, Extract<ScheduledTryReplayEvent, { kind: "poison" }>>();
+  const predatorEvents = new Map<number, Array<Extract<ScheduledTryReplayEvent, { kind: "eat" }>>>();
+
+  for (const event of schedule.events) {
+    if (event.kind === "play") {
+      playTimes.set(event.boxId, event.at);
+    } else if (event.kind === "eat") {
+      eatenEvents.set(event.preyId, event);
+      const events = predatorEvents.get(event.predatorId) ?? [];
+      events.push(event);
+      predatorEvents.set(event.predatorId, events);
+    } else if (event.kind === "escape") {
+      escapeEvents.set(event.fishId, event);
+    } else if (event.kind === "poison") {
+      poisonEvents.set(event.poisonId, event);
+    }
+  }
+
+  const parentGain = getTryScoreGain(getParent());
+  const showWhale = tryEndReason === "parent-close";
+  const scoreTargetIndex = orderedCards.length;
+  const slotCount = orderedCards.length + (showWhale ? 1 : 0);
+
+  return `
+    <section
+      class="try-replay-panel"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="try-replay-title"
+      aria-describedby="try-replay-description"
+      tabindex="-1"
+    >
+      <div class="try-replay-header">
+        <div>
+          <p class="section-label">得点確定</p>
+          <h2 id="try-replay-title">この回の捕食リプレイ</h2>
+        </div>
+        <button class="text-button try-replay-skip" type="button" data-action="skip-try-replay">スキップ</button>
+      </div>
+      <p id="try-replay-description" class="try-replay-description">
+        カードが出た順に現れ、大きな魚が小さな魚を食べた流れを再生します。
+      </p>
+      <div class="try-replay-stage">
+        <div class="try-replay-callout-layer" aria-hidden="true">
+          ${schedule.events
+            .filter((event) => event.kind !== "play")
+            .map(
+              (event) => `
+                <div
+                  class="try-replay-callout is-${event.kind}"
+                  style="--event-delay: ${event.at}ms"
+                >${getTryReplayEventLabel(event)}</div>
+              `
+            )
+            .join("")}
+        </div>
+        <div
+          class="try-replay-track"
+          style="--replay-slots: ${Math.max(slotCount, 1)}"
+          aria-label="カードの投入と捕食の順番"
+        >
+          ${orderedCards
+            .map((card, index) => {
+              const eatenEvent = eatenEvents.get(card.boxId);
+              const escapeEvent = escapeEvents.get(card.boxId);
+              const poisonEvent = poisonEvents.get(card.boxId);
+              const isParentScoreBundle =
+                showWhale &&
+                parentGain > 0 &&
+                isParentScoringBundle(card);
+              const motionClass = eatenEvent
+                ? "is-devoured"
+                : escapeEvent
+                  ? "is-escaping"
+                  : isParentScoreBundle
+                    ? "is-parent-scored"
+                    : poisonEvent
+                      ? "is-poison-resolved"
+                      : "";
+              const motionStyle = eatenEvent
+                ? `--motion-delay: ${eatenEvent.at}ms; --motion-x: ${(cardIndexById.get(eatenEvent.predatorId)! - index) * 100}%`
+                : escapeEvent
+                  ? `--motion-delay: ${escapeEvent.at}ms`
+                  : isParentScoreBundle
+                    ? `--motion-delay: ${schedule.finalAt}ms; --motion-x: ${(scoreTargetIndex - index) * 100}%`
+                    : poisonEvent
+                      ? `--motion-delay: ${poisonEvent.at}ms`
+                      : "";
+              const chompEvents = predatorEvents.get(card.boxId) ?? [];
+
+              return `
+                <div
+                  class="try-replay-slot"
+                  style="--enter-delay: ${playTimes.get(card.boxId) ?? 0}ms"
+                >
+                  <div class="try-replay-card-motion ${motionClass}" style="${motionStyle}">
+                    <div class="try-replay-card-visual">
+                      ${renderTryReplayCard(card)}
+                    </div>
+                    ${chompEvents
+                      .map(
+                        (event) => `
+                          <span
+                            class="try-replay-chomp-ring"
+                            style="--event-delay: ${event.at}ms"
+                            aria-hidden="true"
+                          ></span>
+                        `
+                      )
+                      .join("")}
+                  </div>
+                  <small title="${getTryOrderLabel(card)}">${getTryReplayOwnerLabel(card)}</small>
+                </div>
+              `;
+            })
+            .join("")}
+          ${
+            showWhale
+              ? `
+                <div class="try-replay-whale" style="--motion-delay: ${schedule.finalAt}ms" aria-hidden="true">
+                  <img class="try-replay-whale-open" src="./assets/mouth/whale-open.png" alt="">
+                  <img class="try-replay-whale-fed" src="./assets/mouth/whale-fed.png" alt="">
+                  <strong>パク！</strong>
+                </div>
+              `
+              : ""
+          }
+        </div>
+        <div class="try-replay-final" style="--final-delay: ${schedule.finalAt + 520}ms" aria-live="polite">
+          <span>得点確定</span>
+          <strong>${getTryReplayScoreSummary()}</strong>
+        </div>
+      </div>
+    </section>
+  `;
+}
+
+function getTryReplaySchedule(): TryReplaySchedule {
+  const replayEvents = buildTryReplayEvents();
+  const tempo = replayEvents.length > 18 ? 0.68 : replayEvents.length > 12 ? 0.82 : 1;
+  const events: ScheduledTryReplayEvent[] = [];
+  let cursor = gameEffect ? 1080 : 220;
+
+  for (const event of replayEvents) {
+    events.push({ ...event, at: Math.round(cursor) } as ScheduledTryReplayEvent);
+
+    const baseDuration =
+      event.kind === "play"
+        ? 300
+        : event.kind === "eat"
+          ? 440
+          : event.kind === "escape"
+            ? 520
+            : 340;
+    cursor += baseDuration * tempo;
+  }
+
+  const finalAt = Math.round(cursor + 180);
+  return {
+    events,
+    finalAt,
+    duration: finalAt + 1450
+  };
+}
+
+function buildTryReplayEvents(): TryReplayEvent[] {
+  // Final capture fields collapse a whole chain into the latest predator, so replay the rules in sequence.
+  const orderedCards = [...boxCards].sort((left, right) => left.sequence - right.sequence);
+  const processedCards: BoxCard[] = [];
+  const numericStates = new Map<number, TryReplayNumericState>();
+  const poisonEventsRecorded = new Set<number>();
+  const events: TryReplayEvent[] = [];
+
+  for (const card of orderedCards) {
+    events.push({ kind: "play", boxId: card.boxId });
+    processedCards.push(card);
+
+    if (card.type === "bait") {
+      numericStates.set(card.boxId, {
+        card,
+        capturedIds: [],
+        consumedById: null
+      });
+      continue;
+    }
+
+    if (card.type === "poison") continue;
+
+    if (card.type === "escape") {
+      if (!card.successful) {
+        events.push({ kind: "ineffective", boxId: card.boxId, reason: "escape-failed" });
+        continue;
+      }
+
+      const escapeTarget = [...processedCards]
+        .reverse()
+        .find((item): item is FishBoxCard => {
+          if (item.type !== "fish" || item.ownerId !== card.ownerId) return false;
+          const state = numericStates.get(item.boxId);
+          return Boolean(
+            state &&
+            state.consumedById === null &&
+            !item.poisonScoredById &&
+            !item.invalidatedByOwnPoison &&
+            state.capturedIds.length > 0
+          );
+        });
+
+      if (escapeTarget) {
+        const targetState = numericStates.get(escapeTarget.boxId)!;
+        events.push({
+          kind: "escape",
+          fishId: escapeTarget.boxId,
+          points: sumTryReplayValues(targetState.capturedIds, numericStates)
+        });
+      }
+      continue;
+    }
+
+    const newFishState: TryReplayNumericState = {
+      card,
+      capturedIds: [],
+      consumedById: null
+    };
+    numericStates.set(card.boxId, newFishState);
+
+    if (card.invalidatedByOwnPoison) {
+      events.push({ kind: "ineffective", boxId: card.boxId, reason: "own-poison" });
+      continue;
+    }
+
+    if (card.poisonScoredById) {
+      const poison = [...processedCards]
+        .reverse()
+        .find(
+          (item): item is PoisonBoxCard =>
+            item.type === "poison" &&
+            item.ownerId === card.poisonScoredById &&
+            item.status === "triggered"
+        );
+
+      if (poison) {
+        events.push({
+          kind: "poison",
+          poisonId: poison.boxId,
+          outcome: "triggered",
+          points: card.value
+        });
+        poisonEventsRecorded.add(poison.boxId);
+      }
+      continue;
+    }
+
+    for (let index = processedCards.length - 2; index >= 0; index -= 1) {
+      const target = processedCards[index];
+
+      if (target.type === "poison") continue;
+      if (target.type === "escape") {
+        if (target.successful) break;
+        continue;
+      }
+
+      const targetState = numericStates.get(target.boxId);
+      if (!targetState || targetState.consumedById !== null) continue;
+      if (target.type === "fish" && target.invalidatedByOwnPoison) continue;
+      if (target.type === "fish" && target.poisonScoredById) break;
+      if (target.value >= card.value) break;
+
+      const bundleIds = [target.boxId, ...targetState.capturedIds];
+      events.push({
+        kind: "eat",
+        predatorId: card.boxId,
+        preyId: target.boxId,
+        bundleIds,
+        points: sumTryReplayValues(bundleIds, numericStates)
+      });
+
+      for (const capturedId of bundleIds) {
+        const capturedState = numericStates.get(capturedId);
+        if (capturedState) capturedState.consumedById = card.boxId;
+      }
+
+      newFishState.capturedIds.push(...bundleIds);
+      targetState.capturedIds = [];
+    }
+  }
+
+  for (const poison of orderedCards.filter((card): card is PoisonBoxCard => card.type === "poison")) {
+    if (poisonEventsRecorded.has(poison.boxId) || poison.status === "active") continue;
+
+    const outcome = poison.status === "triggered"
+      ? "triggered"
+      : poison.status === "removed"
+        ? "removed"
+        : poison.status === "overridden"
+          ? "overridden"
+          : "cancelled";
+    events.push({
+      kind: "poison",
+      poisonId: poison.boxId,
+      outcome,
+      points: outcome === "triggered" ? 10 : 0
+    });
+  }
+
+  return events;
+}
+
+function sumTryReplayValues(cardIds: number[], numericStates: Map<number, TryReplayNumericState>): number {
+  return cardIds.reduce((total, cardId) => total + (numericStates.get(cardId)?.card.value ?? 0), 0);
+}
+
+function renderTryReplayCard(card: BoxCard): string {
+  if (card.type === "bait") {
+    return renderBoxCard({ ...card, consumedById: null });
+  }
+
+  if (card.type === "fish") {
+    return renderBoxCard({
+      ...card,
+      consumedById: null,
+      capturedIds: [],
+      poisonScoredById: null,
+      poisonScoredByName: null,
+      invalidatedByOwnPoison: false,
+      escaped: false
+    });
+  }
+
+  if (card.type === "poison") {
+    return renderBoxCard({ ...card, status: "active" });
+  }
+
+  return renderBoxCard({ ...card, successful: false });
+}
+
+function getTryReplayEventLabel(event: ScheduledTryReplayEvent): string {
+  if (event.kind === "play") {
+    return `${getTryReplayCardLabel(getBoxCard(event.boxId))}を出した`;
+  }
+
+  if (event.kind === "eat") {
+    const predator = getBoxCard(event.predatorId);
+    const prey = getBoxCard(event.preyId);
+    const carriedText = event.bundleIds.length > 1 ? "ごと" : "";
+    return `${getTryReplayCardLabel(predator)}が${getTryReplayCardLabel(prey)}${carriedText} ${event.points}点分を食べた！`;
+  }
+
+  if (event.kind === "escape") {
+    const fish = getBoxCard(event.fishId);
+    return `${getTryReplayCardOwner(fish)}がヒューん！ ${event.points}点を確定`;
+  }
+
+  if (event.kind === "ineffective") {
+    return event.reason === "own-poison" ? "自分の毒魚の直後で効果なし" : "逃げる権利がなく不発";
+  }
+
+  const poison = getBoxCard(event.poisonId);
+  const owner = getTryReplayCardOwner(poison);
+  if (event.outcome === "triggered") return `${owner}の毒魚が発動！ +${event.points}点`;
+  if (event.outcome === "removed") return `${owner}の毒魚を親が除去`;
+  if (event.outcome === "overridden") return `${owner}の毒魚は後の毒魚に上書き`;
+  return `${owner}の毒魚はトライ終了で無効`;
+}
+
+function getBoxCard(boxId: number): BoxCard | null {
+  return boxCards.find((card) => card.boxId === boxId) ?? null;
+}
+
+function getTryReplayCardLabel(card: BoxCard | null): string {
+  if (!card) return "カード";
+  if (card.type === "bait") return "餌1";
+  if (card.type === "fish") return card.schoolBaseValue ? `${card.schoolBaseValue}の群れ` : `魚${card.value}`;
+  if (card.type === "poison") return "毒魚";
+  return "逃げるカード";
+}
+
+function getTryReplayCardOwner(card: BoxCard | null): string {
+  if (!card || card.type === "bait") return "親";
+  return card.ownerName;
+}
+
+function getTryReplayOwnerLabel(card: BoxCard): string {
+  if (card.type === "bait") return "最初の餌";
+  return card.ownerName;
+}
+
+function isParentScoringBundle(card: BoxCard): boolean {
+  if (card.type === "bait") return card.consumedById === null;
+  if (card.type !== "fish") return false;
+  return (
+    card.consumedById === null &&
+    !card.poisonScoredById &&
+    !card.invalidatedByOwnPoison &&
+    !card.escaped
+  );
+}
+
+function getTryReplayScoreSummary(): string {
+  const gains = players
+    .map((player) => ({ player, gained: getTryScoreGain(player) }))
+    .filter(({ gained }) => gained > 0);
+
+  if (gains.length === 0) return "今回は得点なし";
+  return gains.map(({ player, gained }) => `${player.name} +${gained}点`).join(" ／ ");
 }
 
 function renderTryResultOverlay(): string {
