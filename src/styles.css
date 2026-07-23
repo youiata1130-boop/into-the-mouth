@@ -3052,7 +3052,11 @@ body {
   transform: translate(-50%, -50%) scale(0.965);
 }
 
-.board-screen .mouth.is-open .whale-face-open,
+.board-screen .mouth.is-open .whale-face-open {
+  opacity: 1;
+  transform: translate(-50%, -52%) scale(1.2);
+}
+
 .board-screen .mouth.is-closed:not(.is-after-bite) .whale-face-closed,
 .board-screen .mouth.is-after-bite .whale-face-fed {
   opacity: 1;
@@ -3060,9 +3064,9 @@ body {
 }
 
 .board-screen .mouth.is-open .mouth-cavity {
-  width: min(60%, 390px);
-  min-height: 132px;
-  padding: 8px 18px;
+  width: min(70%, 470px);
+  min-height: 166px;
+  padding: 8px 22px;
   visibility: visible;
   opacity: 1;
   border: 0;
@@ -3070,7 +3074,7 @@ body {
   background: transparent;
   box-shadow: none;
   filter: none;
-  transform: translateY(34px);
+  transform: translateY(42px);
 }
 
 .board-screen .mouth.is-open .cavity-meta {
@@ -3078,8 +3082,26 @@ body {
 }
 
 .board-screen .mouth.is-open .mouth-card-stack {
-  min-height: 104px;
-  padding-top: 8px;
+  min-height: 132px;
+  padding: 8px 10px 4px;
+}
+
+.board-screen .mouth.is-open .mouth-card-stack .box-card {
+  flex-basis: 76px;
+  width: 76px;
+  height: 100px;
+}
+
+.board-screen .mouth.is-open .mouth-card-stack .box-card + .box-card {
+  margin-left: -54px;
+}
+
+.board-screen .mouth.is-open .mouth-card-stack .card-value {
+  font-size: 2.15rem;
+}
+
+.board-screen .mouth.is-open .mouth-card-stack .card-symbol {
+  font-size: 2.5rem;
 }
 
 .mouth-state.is-after-bite {
@@ -3151,10 +3173,37 @@ body {
 }
 
 @media (max-width: 560px) {
+  .board-screen .mouth.is-open .whale-face-open {
+    transform: translate(-50%, -52%) scale(1.16);
+  }
+
   .board-screen .mouth.is-open .mouth-cavity {
-    width: 70%;
+    width: 84%;
+    min-height: 148px;
     padding-inline: 10px;
-    transform: translateY(26px);
+    transform: translateY(32px);
+  }
+
+  .board-screen .mouth.is-open .mouth-card-stack {
+    min-height: 118px;
+  }
+
+  .board-screen .mouth.is-open .mouth-card-stack .box-card {
+    flex-basis: 66px;
+    width: 66px;
+    height: 88px;
+  }
+
+  .board-screen .mouth.is-open .mouth-card-stack .box-card + .box-card {
+    margin-left: -46px;
+  }
+
+  .board-screen .mouth.is-open .mouth-card-stack .card-value {
+    font-size: 1.9rem;
+  }
+
+  .board-screen .mouth.is-open .mouth-card-stack .card-symbol {
+    font-size: 2.15rem;
   }
 
   .bite-aftermath-badge {
