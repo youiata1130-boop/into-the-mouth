@@ -8,7 +8,7 @@ import {
   POISON_REMOVAL_LIMIT_MS as poisonRemovalLimitMs,
   VISIBLE_CARD_COUNT as visibleCardCount
 } from "./game/config";
-import { createShuffledDeck, drawCard, useFaceUpCard } from "./game/deck";
+import { canStackFishCards, createShuffledDeck, drawCard, stackFaceUpFishCards, useFaceUpCard } from "./game/deck";
 import { randomInt, shuffle } from "./game/random";
 import {
   estimateFishCaptureValue as estimateBoardFishCaptureValue,
@@ -41,6 +41,21 @@ type TryEndReason = "parent-close" | "escape" | "poison-timeout";
 type GameMode = "pvp" | "cpu" | "online";
 type OnlineRole = "none" | "host" | "guest";
 type CpuDifficulty = "easy" | "normal" | "hard";
+type NpcChildAction =
+  | { type: "play" | "escape"; slotIndex: number }
+  | { type: "stack"; sourceSlotIndex: number; targetSlotIndex: number };
+type StackDragState = {
+  pointerId: number;
+  playerId: string;
+  sourceSlotIndex: number;
+  sourceCardId: number;
+  stackValue: "2" | "3";
+  startX: number;
+  startY: number;
+  started: boolean;
+  sourceButton: HTMLButtonElement;
+  targetButton: HTMLButtonElement | null;
+};
 type OnlineLobbyMember = { playerId: string; name: string; isHost: boolean };
 type OnlineGameState = {
   playerCount: number;
@@ -60,6 +75,14 @@ type OnlineGameState = {
 };
 
 const appRoot = getAppRoot();
+
+const fishArtPaths: Record<FishValue, string> = {
+  2: "./assets/cards/value-2-sardine.png",
+  3: "./assets/cards/value-3-fish.png",
+  4: "./assets/cards/value-4-fish.png",
+  5: "./assets/cards/value-5-octopus.png",
+  6: "./assets/cards/value-6-shark.png"
+};
 
 let hasStarted = false;
 let gameMode: GameMode = "cpu";
@@ -107,6 +130,9 @@ let poisonResolutionTimerId: number | null = null;
 let poisonCountdownIntervalId: number | null = null;
 let tryEndReason: TryEndReason | null = null;
 let tryStartScores: Record<string, number> = {};
+let stackDragState: StackDragState | null = null;
+let suppressNextCardClick = false;
+let suppressClickTimerId: number | null = null;
 
 const simpleActions: Record<string, () => void> = {
   "start-pvp": () => openModeSetup("pvp"),
@@ -132,6 +158,12 @@ appRoot.addEventListener("click", (event) => {
   const target = event.target;
 
   if (!(target instanceof HTMLElement)) return;
+
+  if (suppressNextCardClick) {
+    suppressNextCardClick = false;
+    event.preventDefault();
+    return;
+  }
 
   const countButton = target.closest<HTMLButtonElement>("button[data-player-count]");
   if (countButton) {
@@ -181,6 +213,107 @@ appRoot.addEventListener("click", (event) => {
   }
 });
 
+appRoot.addEventListener("pointerdown", (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) return;
+  if (event.pointerType === "mouse" && event.button !== 0) return;
+
+  const button = target.closest<HTMLButtonElement>("button[data-stack-value]");
+  const cardTarget = button ? getStackCardIdentity(button) : null;
+
+  if (!button || !cardTarget || button.disabled) return;
+
+  cancelStackDrag();
+  stackDragState = {
+    pointerId: event.pointerId,
+    playerId: cardTarget.playerId,
+    sourceSlotIndex: cardTarget.slotIndex,
+    sourceCardId: cardTarget.cardId,
+    stackValue: cardTarget.stackValue,
+    startX: event.clientX,
+    startY: event.clientY,
+    started: false,
+    sourceButton: button,
+    targetButton: null
+  };
+  button.setPointerCapture(event.pointerId);
+});
+
+appRoot.addEventListener("pointermove", (event) => {
+  const drag = stackDragState;
+  if (!drag || event.pointerId !== drag.pointerId) return;
+
+  if (!drag.started && Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) < 8) return;
+
+  drag.started = true;
+  event.preventDefault();
+  drag.sourceButton.classList.add("is-stack-dragging");
+  setStackDropTarget(getStackDropTarget(event.clientX, event.clientY, drag));
+});
+
+appRoot.addEventListener("pointerup", (event) => {
+  const drag = stackDragState;
+  if (!drag || event.pointerId !== drag.pointerId) return;
+
+  const targetButton = drag.started ? getStackDropTarget(event.clientX, event.clientY, drag) : null;
+
+  if (!drag.started || !targetButton) {
+    cancelStackDrag();
+    return;
+  }
+
+  event.preventDefault();
+  const targetIdentity = getStackCardIdentity(targetButton);
+  suppressCardClickAfterDrag();
+  cancelStackDrag();
+
+  if (!targetIdentity) return;
+  requestStackCards(
+    drag.playerId,
+    drag.sourceSlotIndex,
+    targetIdentity.slotIndex,
+    drag.sourceCardId,
+    targetIdentity.cardId
+  );
+});
+
+appRoot.addEventListener("pointercancel", (event) => {
+  if (stackDragState?.pointerId === event.pointerId) cancelStackDrag();
+});
+
+appRoot.addEventListener("keydown", (event) => {
+  if (event.key.toLowerCase() !== "s") return;
+  const target = event.target;
+  if (!(target instanceof HTMLButtonElement)) return;
+
+  const sourceIdentity = getStackCardIdentity(target);
+  if (!sourceIdentity || target.disabled) return;
+
+  const matchingTarget = [...appRoot.querySelectorAll<HTMLButtonElement>("button[data-stack-value]")]
+    .find((button) => {
+      const identity = getStackCardIdentity(button);
+      return (
+        identity !== null &&
+        !button.disabled &&
+        identity.playerId === sourceIdentity.playerId &&
+        identity.slotIndex !== sourceIdentity.slotIndex &&
+        identity.stackValue === sourceIdentity.stackValue
+      );
+    });
+
+  const targetIdentity = matchingTarget ? getStackCardIdentity(matchingTarget) : null;
+  if (!targetIdentity) return;
+
+  event.preventDefault();
+  requestStackCards(
+    sourceIdentity.playerId,
+    sourceIdentity.slotIndex,
+    targetIdentity.slotIndex,
+    sourceIdentity.cardId,
+    targetIdentity.cardId
+  );
+});
+
 appRoot.addEventListener("input", (event) => {
   const target = event.target;
   if (!(target instanceof HTMLInputElement)) return;
@@ -219,6 +352,116 @@ function getCardActionTarget(button: HTMLButtonElement): { playerId: string; slo
   const slotIndex = Number(button.dataset.slotIndex);
 
   return playerId && Number.isInteger(slotIndex) ? { playerId, slotIndex } : null;
+}
+
+function getStackCardIdentity(button: HTMLButtonElement): {
+  playerId: string;
+  slotIndex: number;
+  cardId: number;
+  stackValue: "2" | "3";
+} | null {
+  const playerId = button.dataset.playerId;
+  const slotIndex = Number(button.dataset.slotIndex);
+  const cardId = Number(button.dataset.cardId);
+  const stackValue = button.dataset.stackValue;
+
+  if (!playerId || !Number.isInteger(slotIndex) || !Number.isInteger(cardId)) return null;
+  if (stackValue !== "2" && stackValue !== "3") return null;
+  return { playerId, slotIndex, cardId, stackValue };
+}
+
+function getStackDropTarget(clientX: number, clientY: number, drag: StackDragState): HTMLButtonElement | null {
+  const element = document.elementFromPoint(clientX, clientY);
+  const button = element instanceof Element ? element.closest<HTMLButtonElement>("button[data-stack-value]") : null;
+  const identity = button ? getStackCardIdentity(button) : null;
+
+  if (!button || !identity || button.disabled) return null;
+  if (identity.playerId !== drag.playerId || identity.slotIndex === drag.sourceSlotIndex) return null;
+  if (identity.stackValue !== drag.stackValue) return null;
+  return button;
+}
+
+function setStackDropTarget(button: HTMLButtonElement | null): void {
+  const drag = stackDragState;
+  if (!drag || drag.targetButton === button) return;
+  drag.targetButton?.classList.remove("is-stack-target");
+  drag.targetButton = button;
+  drag.targetButton?.classList.add("is-stack-target");
+}
+
+function cancelStackDrag(): void {
+  const drag = stackDragState;
+  if (!drag) return;
+  drag.sourceButton.classList.remove("is-stack-dragging");
+  drag.targetButton?.classList.remove("is-stack-target");
+  if (drag.sourceButton.hasPointerCapture(drag.pointerId)) {
+    drag.sourceButton.releasePointerCapture(drag.pointerId);
+  }
+  stackDragState = null;
+}
+
+function suppressCardClickAfterDrag(): void {
+  suppressNextCardClick = true;
+  if (suppressClickTimerId !== null) window.clearTimeout(suppressClickTimerId);
+  suppressClickTimerId = window.setTimeout(() => {
+    suppressNextCardClick = false;
+    suppressClickTimerId = null;
+  }, 80);
+}
+
+function requestStackCards(
+  playerId: string,
+  sourceSlotIndex: number,
+  targetSlotIndex: number,
+  expectedSourceCardId: number,
+  expectedTargetCardId: number
+): void {
+  if (onlineRole === "guest") {
+    sendOnlineMessage({
+      type: "action",
+      action: "stack-cards",
+      playerId,
+      slotIndex: sourceSlotIndex,
+      targetSlotIndex,
+      sourceCardId: expectedSourceCardId,
+      targetCardId: expectedTargetCardId
+    });
+    return;
+  }
+
+  stackCardsIntoSchool(
+    playerId,
+    sourceSlotIndex,
+    targetSlotIndex,
+    expectedSourceCardId,
+    expectedTargetCardId
+  );
+}
+
+function stackCardsIntoSchool(
+  playerId: string,
+  sourceSlotIndex: number,
+  targetSlotIndex: number,
+  expectedSourceCardId?: number,
+  expectedTargetCardId?: number
+): void {
+  const player = getPlayer(playerId);
+  if (player.role !== "child" || !isMouthOpen || isTryEnded || isGameOver) return;
+
+  const school = stackFaceUpFishCards(
+    player,
+    sourceSlotIndex,
+    targetSlotIndex,
+    expectedSourceCardId,
+    expectedTargetCardId
+  );
+
+  if (!school?.schoolBaseValue) return;
+  const refillText = player.faceUp[sourceSlotIndex]
+    ? "空いた場所には山札から1枚補充しました。"
+    : "山札がないため、空いた場所はそのままです。";
+  addLog(`${player.name} が ${school.schoolBaseValue} を2枚重ね、強さ ${school.value} の群れを作りました。${refillText}`);
+  render();
 }
 
 function setupNewGame(): void {
@@ -380,11 +623,36 @@ function attachHostConnection(connection: DataConnection): void {
 }
 
 function handleHostMessage(connection: DataConnection, raw: unknown): void {
-  const message = raw as { type?: string; action?: string; playerId?: string; slotIndex?: number };
+  const message = raw as {
+    type?: string;
+    action?: string;
+    playerId?: string;
+    slotIndex?: number;
+    targetSlotIndex?: number;
+    sourceCardId?: number;
+    targetCardId?: number;
+  };
   if (message.type !== "action" || !message.action) return;
 
   const assignedId = connectionPlayerIds.get(connection.peer);
   if (!assignedId) return;
+  if (message.action === "stack-cards") {
+    if (
+      message.playerId !== assignedId ||
+      !Number.isInteger(message.slotIndex) ||
+      !Number.isInteger(message.targetSlotIndex) ||
+      !Number.isInteger(message.sourceCardId) ||
+      !Number.isInteger(message.targetCardId)
+    ) return;
+    stackCardsIntoSchool(
+      assignedId,
+      message.slotIndex!,
+      message.targetSlotIndex!,
+      message.sourceCardId!,
+      message.targetCardId!
+    );
+    return;
+  }
   if (message.action === "play-card" || message.action === "escape-card") {
     if (message.playerId !== assignedId || !Number.isInteger(message.slotIndex)) return;
     message.action === "play-card" ? playCard(assignedId, message.slotIndex!) : escapeWithCard(assignedId, message.slotIndex!);
@@ -479,7 +747,7 @@ function destroyOnlineSession(): void {
 }
 
 function isRemoteGameAction(action: string): boolean {
-  return ["open-mouth", "close-mouth", "remove-poison", "play-card", "escape-card", "next-try", "advance-parent"].includes(action);
+  return ["open-mouth", "close-mouth", "remove-poison", "play-card", "escape-card", "stack-cards", "next-try", "advance-parent"].includes(action);
 }
 
 function sendOnlineMessage(message: object): void {
@@ -701,6 +969,9 @@ function playFish(player: Player, slotIndex: number): void {
     sourceCardId: card.id,
     type: "fish",
     value: card.value,
+    schoolBaseValue: card.schoolBaseValue,
+    schoolSize: card.schoolSize,
+    componentCardIds: card.componentCardIds,
     ownerId: player.id,
     ownerName: player.name,
     sequence: nextSequence++,
@@ -716,7 +987,7 @@ function playFish(player: Player, slotIndex: number): void {
 
   if (activePoison?.ownerId === player.id) {
     fishBoxCard.invalidatedByOwnPoison = true;
-    addLog(`${player.name} は自分の毒魚に続けて魚「${card.value}」を出したため、このカードは効果も得点価値も持ちません。`);
+    addLog(`${player.name} は自分の毒魚に続けて${getFishCardLabel(card)}を出したため、このカードは効果も得点価値も持ちません。`);
     render();
     return;
   }
@@ -728,7 +999,7 @@ function playFish(player: Player, slotIndex: number): void {
     fishBoxCard.poisonScoredByName = activePoison.ownerName;
     markPoisonResolved(activePoison.boxId, "triggered");
     clearPoisonRemovalTimer();
-    addLog(`${player.name} が魚「${card.value}」を出しました。${activePoison.ownerName} の毒魚が発動し、${activePoison.ownerName} が ${card.value} 点を確定しました。`);
+    addLog(`${player.name} が${getFishCardLabel(card)}を出しました。${activePoison.ownerName} の毒魚が発動し、${activePoison.ownerName} が ${card.value} 点を確定しました。`);
     activePoison = null;
     render();
     return;
@@ -738,8 +1009,14 @@ function playFish(player: Player, slotIndex: number): void {
 
   const capturedTotal = sumCapturedIds(fishBoxCard.capturedIds);
   const detail = fishBoxCard.capturedIds.length > 0 ? `得点候補 ${capturedTotal} 点を持ちました。` : "何も食べられず、得点候補はありません。";
-  addLog(`${player.name} が魚「${card.value}」を出しました。${detail}`);
+  addLog(`${player.name} が${getFishCardLabel(card)}を出しました。${detail}`);
   render();
+}
+
+function getFishCardLabel(card: FishCard | FishBoxCard): string {
+  return card.schoolBaseValue
+    ? `${card.schoolBaseValue}の群れ（強さ${card.value}）`
+    : `魚「${card.value}」`;
 }
 
 function playPoison(player: Player, slotIndex: number): void {
@@ -1036,7 +1313,9 @@ function scheduleNpcChildAction(): void {
 
       if (!action) continue;
 
-      if (action.type === "escape") {
+      if (action.type === "stack") {
+        stackCardsIntoSchool(player.id, action.sourceSlotIndex, action.targetSlotIndex);
+      } else if (action.type === "escape") {
         escapeWithCard(player.id, action.slotIndex);
       } else {
         playCard(player.id, action.slotIndex);
@@ -1049,7 +1328,7 @@ function scheduleNpcChildAction(): void {
   }, getCpuDelay("child"));
 }
 
-function chooseNpcChildAction(player: Player): { type: "play" | "escape"; slotIndex: number } | null {
+function chooseNpcChildAction(player: Player): NpcChildAction | null {
   const candidate = getPlayerCandidates(player.id).at(-1);
   const candidateTotal = candidate ? sumCapturedIds(candidate.capturedIds) : 0;
   const escapeSlot = getNpcEscapeSlot(player);
@@ -1063,6 +1342,9 @@ function chooseNpcChildAction(player: Player): { type: "play" | "escape"; slotIn
       return { type: "escape", slotIndex: escapeSlot };
     }
   }
+
+  const stackPair = getNpcStackPair(player);
+  if (stackPair) return { type: "stack", ...stackPair };
 
   const poisonSlot = player.faceUp.findIndex((card) => card?.type === "poison");
 
@@ -1109,6 +1391,26 @@ function chooseNpcChildAction(player: Player): { type: "play" | "escape"; slotIn
 
   if (candidate && escapeSlot !== null) {
     return { type: "escape", slotIndex: escapeSlot };
+  }
+
+  return null;
+}
+
+function getNpcStackPair(player: Player): { sourceSlotIndex: number; targetSlotIndex: number } | null {
+  for (const value of [3, 2] as const) {
+    const matchingSlots = player.faceUp
+      .map((card, slotIndex) => ({ card, slotIndex }))
+      .filter(({ card }) => card?.type === "fish" && card.value === value && card.schoolSize === undefined);
+
+    for (let sourceIndex = 0; sourceIndex < matchingSlots.length; sourceIndex += 1) {
+      for (let targetIndex = sourceIndex + 1; targetIndex < matchingSlots.length; targetIndex += 1) {
+        const source = matchingSlots[sourceIndex];
+        const target = matchingSlots[targetIndex];
+        if (canStackFishCards(source.card, target.card)) {
+          return { sourceSlotIndex: source.slotIndex, targetSlotIndex: target.slotIndex };
+        }
+      }
+    }
   }
 
   return null;
@@ -1256,6 +1558,8 @@ function applyOnlineState(state: OnlineGameState): void {
 }
 
 function render(): void {
+  cancelStackDrag();
+
   if (modeSetupOpen) {
     appRoot.innerHTML = renderPlayerCountScreen();
     return;
@@ -1521,6 +1825,8 @@ function renderRulesSummary(): string {
           <li>箱のカードは先に出たものから並び、直前から逆順に捕食を判定します。</li>
           <li>箱のカードは表向きに重ね、一番上だけ内容が見える状態にします。終了後に全カードの順番と終了位置を公開します。</li>
           <li>魚は数字に関係なく出せます。</li>
+          <li>口が開いている間、同じ2同士または3同士をドラッグして重ねると群れになります。2の群れは強さ4、3の群れは強さ6です。</li>
+          <li>群れを作って空いた公開枠には、山札があれば即座に1枚補充します。群れは1枚の魚として出し、再び重ねたり分けたりはできません。</li>
           <li>逃げ成功時は、魚自身ではなく食べたカードだけを得点します。</li>
           <li>親が閉じたら、毒魚・逃げる・毒魚で得点化済みの魚を除いた数字カードを得点します。</li>
         </ul>
@@ -1693,7 +1999,7 @@ function getTryOrderLabel(card: BoxCard): string {
   if (card.type === "bait") return "餌 1";
   if (card.type === "poison") return `${card.ownerName} 毒魚`;
   if (card.type === "escape") return `${card.ownerName} 逃げる`;
-  return `${card.ownerName} 魚${card.value}`;
+  return `${card.ownerName} ${getFishCardLabel(card)}`;
 }
 
 function getTryOrderDetail(card: BoxCard): string {
@@ -1757,6 +2063,7 @@ function renderMouth(): string {
 
   return `
     <div class="mouth ${isMouthOpen ? "is-open" : "is-closed"}">
+      <img class="whale-face" src="./assets/mouth/whale-front.png" alt="" aria-hidden="true">
       <div class="jaw jaw-top" aria-hidden="true">
         <span></span><span></span><span></span><span></span><span></span>
       </div>
@@ -1793,12 +2100,12 @@ function renderBoxCard(card: BoxCard, concealed = false): string {
 
   if (card.type === "poison") {
     const poisonLabel = getPoisonCardStatusLabel(card.status);
+    const poisonAccessibility = concealed ? accessibility : ` aria-label="毒魚。${poisonLabel}"`;
     return `
-      <article${accessibility} class="box-card poison-card ${card.status === "active" ? "is-active" : "is-spent"} is-${card.status}">
+      <article${poisonAccessibility} class="box-card poison-card ${card.status === "active" ? "is-active" : "is-spent"} is-${card.status}">
         <span class="card-sequence">${card.sequence}</span>
-        <span class="card-value">毒</span>
-        <span class="card-name">${card.ownerName}</span>
-        <span class="card-tag">${poisonLabel}</span>
+        <img class="card-fish-art" src="./assets/cards/poison-fish.png" alt="" aria-hidden="true">
+        <span class="card-symbol poison-symbol" aria-hidden="true">&#9760;</span>
       </article>
     `;
   }
@@ -1814,10 +2121,12 @@ function renderBoxCard(card: BoxCard, concealed = false): string {
     `;
   }
 
+  const fishArtValue = card.schoolBaseValue ?? card.value;
   return `
-    <article${accessibility} class="box-card fish-card-in-box value-${card.value} ${card.consumedById ? "is-eaten" : ""} ${card.poisonScoredById ? "is-poison-scored" : ""} ${card.invalidatedByOwnPoison ? "is-ineffective" : ""} ${card.escaped ? "is-escaped" : ""}">
+    <article${accessibility} class="box-card fish-card-in-box value-${card.value} ${card.schoolSize === 2 ? "is-school" : ""} ${card.consumedById ? "is-eaten" : ""} ${card.poisonScoredById ? "is-poison-scored" : ""} ${card.invalidatedByOwnPoison ? "is-ineffective" : ""} ${card.escaped ? "is-escaped" : ""}">
       <span class="card-sequence">${card.sequence}</span>
-      <img class="card-fish-art" src="./fish-${card.value}.png" alt="" aria-hidden="true">
+      ${card.schoolSize === 2 ? '<span class="school-card-layer" aria-hidden="true"></span>' : ""}
+      <img class="card-fish-art" src="${fishArtPaths[fishArtValue]}" alt="" aria-hidden="true">
       <span class="card-value">${card.value}</span>
     </article>
   `;
@@ -1890,7 +2199,7 @@ function renderChildPanel(player: Player, index: number, variant: "opponent" | "
   const candidateText = hasNoCards
     ? "山札切れ・この親ラウンドでは行動終了"
     : latestCandidate
-    ? `逃げ対象: 魚${latestCandidate.value} / ${sumCapturedIds(latestCandidate.capturedIds)}点`
+    ? `逃げ対象: ${getFishCardLabel(latestCandidate)} / ${sumCapturedIds(latestCandidate.capturedIds)}点`
     : "有効な得点候補なし";
 
   return `
@@ -1910,7 +2219,8 @@ function renderChildPanel(player: Player, index: number, variant: "opponent" | "
           ? `
             <div class="child-meta">
               <span>${candidateText}</span>
-              <span>山札 ${player.drawPile.length} / 使用済み ${player.used.length}</span>
+              <span>山札 ${player.drawPile.length} / 使用済み ${getUsedPhysicalCardCount(player)}</span>
+              <span>同じ2または3をドラッグで重ねると群れになります</span>
             </div>
           `
           : `<p class="microcopy">${candidateText}</p>`
@@ -1926,15 +2236,25 @@ function renderHandSlot(player: Player, card: PlayerCard | null, slotIndex: numb
 
   const canUse = (gameMode === "pvp" || player.id === localPlayerId) && player.role === "child" && isMouthOpen && !isGameOver;
   const ownPoisonMakesFishIneffective = card.type === "fish" && activePoison?.ownerId === player.id;
+  const fishLabel = card.type === "fish" ? getFishCardLabel(card) : "";
   const playLabel = ownPoisonMakesFishIneffective
-    ? `魚${card.value}を出す（自分の毒魚直後のため効果なし）`
+    ? `${fishLabel}を出す（自分の毒魚直後のため効果なし）`
     : card.type === "poison" && activePoison
       ? "毒魚を出して得点の権利を奪う"
       : card.type === "poison"
         ? "毒魚を出す"
-        : `魚${card.value}を出す`;
-  const cardClass = card.type === "poison" ? "poison-hand-card" : `fish-hand-card value-${card.value}`;
+        : `${fishLabel}を出す`;
+  const isSchool = card.type === "fish" && card.schoolSize === 2;
+  const canStack =
+    canUse &&
+    card.type === "fish" &&
+    card.schoolSize === undefined &&
+    (card.value === 2 || card.value === 3);
+  const cardClass = card.type === "poison"
+    ? "poison-hand-card"
+    : `fish-hand-card value-${card.value}${isSchool ? " is-school" : ""}`;
   const valueLabel = card.type === "poison" ? "" : String(card.value);
+  const artValue = card.type === "fish" ? (card.schoolBaseValue ?? card.value) : null;
   const escapeCandidate = getPlayerCandidates(player.id).at(-1);
   const escapePoints = escapeCandidate ? sumCapturedIds(escapeCandidate.capturedIds) : 0;
   const escapeLabel = escapeCandidate ? `裏で逃げる ${escapePoints}点` : "裏で逃げる（効果なし）";
@@ -1947,11 +2267,15 @@ function renderHandSlot(player: Player, card: PlayerCard | null, slotIndex: numb
         data-action="play-card"
         data-player-id="${player.id}"
         data-slot-index="${slotIndex}"
+        data-card-id="${card.id}"
+        ${canStack ? `data-stack-value="${card.value}"` : ""}
+        ${canStack ? 'aria-keyshortcuts="S"' : ""}
         ${canUse ? "" : " disabled"}
-        title="${canUse ? playLabel : "口が開いている間だけ使用できます。"}"
+        title="${canUse ? `${playLabel}${canStack ? "。同じ数字のカードへドラッグするか、Sキーで群れにできます。" : ""}` : "口が開いている間だけ使用できます。"}"
       >
-        <img class="card-fish-art" src="${card.type === "fish" ? `./fish-${card.value}.png` : "./fish-card.png"}" alt="" aria-hidden="true">
-        ${valueLabel ? `<span class="card-value">${valueLabel}</span>` : ""}
+        ${isSchool ? '<span class="school-card-layer" aria-hidden="true"></span>' : ""}
+        <img class="card-fish-art" src="${artValue ? fishArtPaths[artValue] : "./assets/cards/poison-fish.png"}" alt="" aria-hidden="true">
+        ${card.type === "poison" ? '<span class="card-symbol poison-symbol" aria-hidden="true">&#9760;</span>' : `<span class="card-value">${valueLabel}</span>`}
       </button>
       <button
         class="escape-chip"
@@ -1966,6 +2290,13 @@ function renderHandSlot(player: Player, card: PlayerCard | null, slotIndex: numb
       </button>
     </div>
   `;
+}
+
+function getUsedPhysicalCardCount(player: Player): number {
+  return player.used.reduce(
+    (total, card) => total + (card.type === "fish" && card.schoolSize === 2 ? 2 : 1),
+    0
+  );
 }
 
 function getMouthStatusLabel(): string {

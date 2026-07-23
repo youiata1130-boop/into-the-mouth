@@ -2358,34 +2358,94 @@ body {
   box-shadow:
     inset 0 -10px 0 rgba(0, 0, 0, 0.1),
     0 10px 24px rgba(18, 76, 82, 0.16);
+  transition:
+    opacity 220ms ease,
+    transform 260ms ease;
+}
+
+.board-screen .whale-face {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  z-index: 1;
+  width: min(82%, 560px);
+  height: auto;
+  opacity: 0;
+  transform: translate(-50%, -50%) scale(0.9);
+  filter: drop-shadow(0 14px 18px rgba(10, 67, 88, 0.22));
+  pointer-events: none;
+  transition:
+    opacity 180ms ease,
+    transform 280ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.board-screen .mouth.is-closed .whale-face {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1);
+}
+
+.board-screen .mouth.is-closed::before {
+  opacity: 0.16;
+  transform: scale(0.96);
 }
 
 .board-screen .jaw {
-  width: min(68%, 456px);
-  height: 24px;
-  padding: 0 42px;
+  top: 50%;
+  bottom: auto;
+  width: min(70%, 470px);
+  height: 34px;
+  padding: 0 48px;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  transition: transform 260ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.board-screen .jaw::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
   border: 2px solid #8f283d;
-  background: linear-gradient(180deg, #ef8790, #bd455d);
+  background: linear-gradient(180deg, #f08a94, #b83f58);
   box-shadow: 0 3px 0 #762437;
 }
 
 .board-screen .jaw span {
-  width: 14px;
-  height: 13px;
+  position: relative;
+  z-index: 1;
+  width: 13px;
+  height: 12px;
   border-color: #eadfda;
   border-radius: 2px;
 }
 
 .board-screen .jaw-top {
-  top: 38px;
-  border-radius: 70% 70% 34% 34% / 100% 100% 55% 55%;
-  clip-path: polygon(0 0, 100% 0, 100% 62%, 76% 76%, 50% 100%, 24% 76%, 0 62%);
+  transform: translateY(-82px);
+}
+
+.board-screen .jaw-top::before {
+  clip-path: polygon(
+    0 72%, 5% 48%, 15% 25%, 30% 9%, 50% 0,
+    70% 9%, 85% 25%, 95% 48%, 100% 72%,
+    94% 64%, 84% 50%, 70% 39%, 50% 32%,
+    30% 39%, 16% 50%, 6% 64%
+  );
 }
 
 .board-screen .jaw-bottom {
-  bottom: 38px;
-  border-radius: 34% 34% 70% 70% / 55% 55% 100% 100%;
-  clip-path: polygon(0 38%, 24% 24%, 50% 0, 76% 24%, 100% 38%, 100% 100%, 0 100%);
+  transform: translateY(48px);
+}
+
+.board-screen .jaw-bottom::before {
+  clip-path: polygon(
+    0 28%, 6% 36%, 16% 50%, 30% 61%, 50% 68%,
+    70% 61%, 84% 50%, 94% 36%, 100% 28%,
+    95% 52%, 85% 75%, 70% 91%, 50% 100%,
+    30% 91%, 15% 75%, 5% 52%
+  );
 }
 
 .board-screen .jaw-top span:nth-child(2),
@@ -2407,11 +2467,43 @@ body {
 }
 
 .board-screen .mouth.is-closed .jaw-top {
-  transform: translateY(65px);
+  transform: translateY(-31px);
 }
 
 .board-screen .mouth.is-closed .jaw-bottom {
-  transform: translateY(-65px);
+  transform: translateY(-3px);
+}
+
+.board-screen .mouth.is-closed .jaw {
+  opacity: 0;
+  transition:
+    transform 260ms cubic-bezier(0.4, 0, 0.2, 1),
+    opacity 100ms ease 150ms;
+}
+
+.board-screen .mouth::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  z-index: 5;
+  width: min(69%, 462px);
+  height: 9px;
+  opacity: 0;
+  transform: translate(-50%, -50%) scaleX(0.45);
+  border: 2px solid #762437;
+  border-radius: 50%;
+  background: linear-gradient(180deg, #ef8790, #b83f58);
+  box-shadow: 0 3px 0 rgba(78, 20, 37, 0.5);
+  pointer-events: none;
+  transition:
+    opacity 120ms ease 120ms,
+    transform 220ms ease;
+}
+
+.board-screen .mouth.is-closed::after {
+  opacity: 0;
+  transform: translate(-50%, -50%) scaleX(1);
 }
 
 .board-screen .mouth-cavity {
@@ -2423,17 +2515,45 @@ body {
   background:
     radial-gradient(ellipse at 50% 82%, rgba(222, 102, 118, 0.42), transparent 42%),
     linear-gradient(180deg, #8e3049, #401326);
+  transform-origin: center;
+  transition:
+    opacity 120ms ease,
+    transform 240ms cubic-bezier(0.4, 0, 0.2, 1),
+    visibility 0s linear;
+}
+
+.board-screen .mouth.is-closed .mouth-cavity {
+  visibility: hidden;
+  opacity: 0;
+  transform: scaleY(0.02);
+  filter: none;
+  transition:
+    opacity 90ms ease,
+    transform 220ms cubic-bezier(0.4, 0, 0.2, 1),
+    visibility 0s linear 220ms;
 }
 
 @media (max-width: 560px) {
+  .board-screen .mouth::before {
+    width: 92%;
+  }
+
   .board-screen .jaw {
-    width: 82%;
+    width: 86%;
     padding-inline: 24px;
   }
 
   .board-screen .mouth-cavity {
-    width: 78%;
+    width: 80%;
     padding-inline: 14px;
+  }
+
+  .board-screen .mouth::after {
+    width: 86%;
+  }
+
+  .board-screen .whale-face {
+    width: 96%;
   }
 }
 
@@ -2494,6 +2614,88 @@ body {
   z-index: 2;
 }
 
+.poison-card {
+  isolation: isolate;
+  overflow: hidden;
+}
+
+.poison-card .card-fish-art,
 .poison-hand-card .card-fish-art {
-  filter: hue-rotate(72deg) saturate(1.25) brightness(0.82);
+  opacity: 0.44;
+  filter: saturate(1.22) contrast(1.08) brightness(0.86);
+}
+
+.card-symbol {
+  position: relative;
+  z-index: 1;
+  display: block;
+  color: #fffdf1;
+  font-family: "Segoe UI Symbol", "Arial Unicode MS", sans-serif;
+  font-size: clamp(2.25rem, 5vw, 3.65rem);
+  font-weight: 900;
+  line-height: 1;
+  text-shadow:
+    0 3px 0 #30103b,
+    2px 0 0 #30103b,
+    -2px 0 0 #30103b,
+    0 -2px 0 #30103b,
+    0 5px 11px rgba(18, 5, 24, 0.58);
+}
+
+.poison-card .card-symbol {
+  font-size: 2.15rem;
+}
+
+.poison-card .card-sequence {
+  z-index: 2;
+}
+
+/* Fish 2 and 3 can be dragged onto a matching card to form a school. */
+.play-card[data-stack-value] {
+  cursor: grab;
+  touch-action: none;
+}
+
+.play-card[data-stack-value]:active,
+.play-card.is-stack-dragging {
+  cursor: grabbing;
+}
+
+.play-card.is-stack-dragging {
+  z-index: 8;
+  opacity: 0.58;
+  transform: rotate(-2deg) scale(0.97);
+}
+
+.play-card.is-stack-target {
+  z-index: 9;
+  outline: 4px solid #f2cf58;
+  outline-offset: 3px;
+  transform: translateY(-5px) scale(1.04);
+  box-shadow: 0 12px 24px rgba(121, 78, 14, 0.28);
+}
+
+.play-card.is-school,
+.box-card.is-school {
+  border-style: double;
+  border-width: 4px;
+  box-shadow:
+    inset 4px -4px 0 rgba(255, 255, 255, 0.58),
+    inset 8px -8px 0 rgba(23, 105, 112, 0.13),
+    0 8px 14px rgba(20, 31, 34, 0.18);
+}
+
+.school-card-layer {
+  position: absolute;
+  inset: 5px;
+  z-index: 1;
+  border: 2px solid rgba(255, 255, 255, 0.72);
+  border-radius: 6px;
+  box-shadow: inset 0 0 0 2px rgba(17, 91, 98, 0.18);
+  pointer-events: none;
+}
+
+.card-fish-art {
+  -webkit-user-drag: none;
+  user-select: none;
 }
