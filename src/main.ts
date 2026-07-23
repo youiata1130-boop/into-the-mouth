@@ -38,6 +38,7 @@ type GameEffect = {
   label: "パク！" | "ヒューん！";
 };
 type TryEndReason = "parent-close" | "escape" | "poison-timeout";
+type BiteAftermath = "fed" | "poisoned";
 type GameMode = "pvp" | "cpu" | "online";
 type OnlineRole = "none" | "host" | "guest";
 type CpuDifficulty = "easy" | "normal" | "hard";
@@ -67,6 +68,7 @@ type OnlineGameState = {
   activePoison: PoisonState | null;
   isMouthOpen: boolean;
   isTryEnded: boolean;
+  biteAftermath: BiteAftermath | null;
   isGameOver: boolean;
   logEntries: string[];
   poisonDeadlineAt: number | null;
@@ -75,13 +77,14 @@ type OnlineGameState = {
 };
 
 const appRoot = getAppRoot();
+const biteAftermathDurationMs = 1500;
 
 const fishArtPaths: Record<FishValue, string> = {
   2: "./assets/cards/value-2-sardine.png",
   3: "./assets/cards/value-3-fish.png",
-  4: "./assets/cards/value-4-fish.png",
-  5: "./assets/cards/value-5-octopus.png",
-  6: "./assets/cards/value-6-shark.png"
+  4: "./assets/cards/value-4-octopus.png",
+  5: "./assets/cards/value-5-shark.png",
+  6: "./assets/cards/value-5-shark.png"
 };
 
 let hasStarted = false;
@@ -117,6 +120,8 @@ let boxCards: BoxCard[] = [];
 let activePoison: PoisonState | null = null;
 let isMouthOpen = false;
 let isTryEnded = false;
+let biteAftermath: BiteAftermath | null = null;
+let biteAftermathTimerId: number | null = null;
 let isGameOver = false;
 let logEntries: string[] = [];
 let npcChildTimerId: number | null = null;
@@ -508,6 +513,7 @@ function returnToTitle(): void {
   if (hasStarted && !confirmDiscardProgress()) return;
   clearNpcTimers();
   clearPoisonRemovalTimer();
+  clearBiteAftermath();
   destroyOnlineSession();
   hasStarted = false;
   onlineLobbyOpen = false;
@@ -794,6 +800,7 @@ function startParentRound(): void {
 function resetTryBox(): void {
   clearNpcTimers();
   clearPoisonRemovalTimer();
+  clearBiteAftermath();
   nextSequence = 1;
   boxCards = [createBaitBoxCard()];
   tryStartScores = Object.fromEntries(players.map((player) => [player.id, player.score]));
@@ -864,7 +871,7 @@ function closeMouth(): void {
     addLog(`${parent.name} が毒魚を残したまま閉じました。${activePoison.ownerName} が10点、親は0点です。`);
     activePoison = null;
     finishTry();
-    render();
+    startBiteAftermath("poisoned");
     return;
   }
 
@@ -872,7 +879,7 @@ function closeMouth(): void {
   parent.score += total;
   addLog(`${parent.name} が口を閉じました。毒魚・逃げる・毒魚で得点化済みの魚を除き、親が ${total} 点を獲得しました。`);
   finishTry();
-  render();
+  startBiteAftermath("fed");
 }
 
 function finishTry(): void {
@@ -1479,6 +1486,27 @@ function showMouthCloseEffect(): void {
   showGameEffect({ kind: "bite", label: "パク！" });
 }
 
+function startBiteAftermath(kind: BiteAftermath): void {
+  clearBiteAftermath();
+  biteAftermath = kind;
+  render();
+
+  biteAftermathTimerId = window.setTimeout(() => {
+    biteAftermath = null;
+    biteAftermathTimerId = null;
+    render();
+  }, biteAftermathDurationMs);
+}
+
+function clearBiteAftermath(): void {
+  if (biteAftermathTimerId !== null) {
+    window.clearTimeout(biteAftermathTimerId);
+    biteAftermathTimerId = null;
+  }
+
+  biteAftermath = null;
+}
+
 function showEscapeSuccessEffect(): void {
   showGameEffect({ kind: "escape", label: "ヒューん！" });
 }
@@ -1523,6 +1551,7 @@ function getOnlineState(): OnlineGameState {
     activePoison,
     isMouthOpen,
     isTryEnded,
+    biteAftermath,
     isGameOver,
     logEntries,
     poisonDeadlineAt,
@@ -1547,6 +1576,7 @@ function applyOnlineState(state: OnlineGameState): void {
   activePoison = state.activePoison;
   isMouthOpen = state.isMouthOpen;
   isTryEnded = state.isTryEnded;
+  biteAftermath = state.biteAftermath ?? null;
   isGameOver = state.isGameOver;
   logEntries = state.logEntries;
   poisonDeadlineAt = state.poisonDeadlineAt;
@@ -1598,7 +1628,9 @@ function render(): void {
                 <p class="section-label">親</p>
                 <h2>${getParent().name}</h2>
               </div>
-              <span class="mouth-state ${isMouthOpen ? "is-open" : "is-closed"}">${isMouthOpen ? "OPEN" : "CLOSED"}</span>
+              <span class="mouth-state ${biteAftermath ? "is-after-bite" : isMouthOpen ? "is-open" : "is-closed"}">
+                ${biteAftermath ? "MUNCH!" : isMouthOpen ? "OPEN" : "CLOSED"}
+              </span>
             </div>
             ${renderMouth()}
           </section>
@@ -1614,7 +1646,7 @@ function render(): void {
           ${focusedChild ? renderChildPanel(focusedChild, getChildIndex(focusedChild), "self") : renderHumanParentSeat()}
         </section>
 
-        ${isTryEnded ? renderTryResultOverlay() : ""}
+        ${isTryEnded && !biteAftermath ? renderTryResultOverlay() : ""}
       </section>
 
       <section class="detail-screen" id="details" aria-label="詳細情報"${isTryEnded ? " inert" : ""}>
@@ -2060,10 +2092,20 @@ function renderRoundActionButtons(): string {
 
 function renderMouth(): string {
   const cardsInMouth = getCardsInMouth();
+  const mouthClass = isMouthOpen
+    ? "is-open"
+    : biteAftermath
+      ? `is-closed is-after-bite is-${biteAftermath}`
+      : "is-closed";
+  const aftermathMessage = biteAftermath === "poisoned"
+    ? "ごっくん…毒魚まで食べちゃった！"
+    : "もぐもぐ…ごっくん！";
 
   return `
-    <div class="mouth ${isMouthOpen ? "is-open" : "is-closed"}">
-      <img class="whale-face" src="./assets/mouth/whale-front.png" alt="" aria-hidden="true">
+    <div class="mouth ${mouthClass}">
+      <img class="whale-face whale-face-closed" src="./assets/mouth/whale-front.png" alt="" aria-hidden="true">
+      <img class="whale-face whale-face-open" src="./assets/mouth/whale-open.png" alt="" aria-hidden="true">
+      <img class="whale-face whale-face-fed" src="./assets/mouth/whale-fed.png" alt="" aria-hidden="true">
       <div class="jaw jaw-top" aria-hidden="true">
         <span></span><span></span><span></span><span></span><span></span>
       </div>
@@ -2080,6 +2122,7 @@ function renderMouth(): string {
       <div class="jaw jaw-bottom" aria-hidden="true">
         <span></span><span></span><span></span><span></span><span></span>
       </div>
+      ${biteAftermath ? `<div class="bite-aftermath-badge" role="status" aria-live="polite">${aftermathMessage}</div>` : ""}
     </div>
   `;
 }
@@ -2302,6 +2345,7 @@ function getUsedPhysicalCardCount(player: Player): number {
 function getMouthStatusLabel(): string {
   if (isGameOver) return "ゲーム終了";
   if (isMouthOpen) return "開いている";
+  if (biteAftermath) return "食べている";
   if (isTryEnded) return "トライ終了";
   return "閉じている";
 }

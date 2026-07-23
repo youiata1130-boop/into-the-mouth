@@ -2557,6 +2557,132 @@ body {
   }
 }
 
+/* Keep the same illustrated whale visible through every mouth state. */
+.board-screen .mouth::before,
+.board-screen .mouth::after {
+  content: none;
+}
+
+.board-screen .mouth .jaw {
+  display: none;
+}
+
+.board-screen .mouth.is-open .whale-face,
+.board-screen .mouth.is-closed .whale-face {
+  opacity: 0;
+  transform: translate(-50%, -50%) scale(0.965);
+}
+
+.board-screen .mouth.is-open .whale-face-open,
+.board-screen .mouth.is-closed:not(.is-after-bite) .whale-face-closed,
+.board-screen .mouth.is-after-bite .whale-face-fed {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1);
+}
+
+.board-screen .mouth.is-open .mouth-cavity {
+  width: min(60%, 390px);
+  min-height: 132px;
+  padding: 8px 18px;
+  visibility: visible;
+  opacity: 1;
+  border: 0;
+  border-radius: 46% / 40%;
+  background: transparent;
+  box-shadow: none;
+  filter: none;
+  transform: translateY(34px);
+}
+
+.board-screen .mouth.is-open .cavity-meta {
+  text-shadow: 0 2px 3px rgba(36, 4, 18, 0.95);
+}
+
+.board-screen .mouth.is-open .mouth-card-stack {
+  min-height: 104px;
+  padding-top: 8px;
+}
+
+.mouth-state.is-after-bite {
+  background: #fff0c7;
+  color: #8a4a0c;
+}
+
+.bite-aftermath-badge {
+  position: absolute;
+  left: 50%;
+  bottom: 14px;
+  z-index: 7;
+  max-width: calc(100% - 24px);
+  padding: 8px 16px;
+  border: 2px solid rgba(255, 255, 255, 0.86);
+  border-radius: 999px;
+  background: rgba(21, 76, 91, 0.9);
+  box-shadow: 0 7px 18px rgba(11, 54, 66, 0.24);
+  color: #fff;
+  font-size: clamp(0.8rem, 2vw, 1rem);
+  font-weight: 1000;
+  letter-spacing: 0.03em;
+  text-align: center;
+  white-space: nowrap;
+  transform: translateX(-50%);
+  animation: aftermath-badge-in 280ms ease-out both;
+}
+
+.board-screen .mouth.is-after-bite .whale-face-fed {
+  animation: whale-chew 680ms ease-in-out 2;
+}
+
+.board-screen .mouth.is-poisoned .whale-face-fed {
+  filter:
+    drop-shadow(0 14px 18px rgba(10, 67, 88, 0.22))
+    saturate(0.82)
+    hue-rotate(12deg);
+}
+
+@keyframes whale-chew {
+  0%,
+  100% {
+    transform: translate(-50%, -50%) scale(1);
+  }
+  35% {
+    transform: translate(-50%, -49%) scale(1.025, 0.975);
+  }
+  68% {
+    transform: translate(-50%, -50.5%) scale(0.99, 1.015);
+  }
+}
+
+@keyframes aftermath-badge-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 8px) scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .board-screen .mouth.is-after-bite .whale-face-fed,
+  .bite-aftermath-badge {
+    animation: none;
+  }
+}
+
+@media (max-width: 560px) {
+  .board-screen .mouth.is-open .mouth-cavity {
+    width: 70%;
+    padding-inline: 10px;
+    transform: translateY(26px);
+  }
+
+  .bite-aftermath-badge {
+    bottom: 8px;
+  }
+}
+
 /* Hand cards use an illustration with the value overlaid; no face copy. */
 .play-card:not(.empty-card) {
   isolation: isolate;
