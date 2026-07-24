@@ -1234,18 +1234,21 @@ function getLiveMouthNumericCards(): Array<BaitBoxCard | FishBoxCard> {
   });
 }
 
-function getMouthCameraZoom(): number {
-  const largestValue = getLiveMouthNumericCards().reduce(
+function getLargestLiveMouthValue(): number {
+  return getLiveMouthNumericCards().reduce(
     (largest, card) => Math.max(largest, card.value),
     1
   );
+}
 
-  if (largestValue <= 1) return 1.95;
-  if (largestValue === 2) return 1.68;
-  if (largestValue === 3) return 1.42;
-  if (largestValue === 4) return 1.18;
-  if (largestValue === 5) return 0.98;
-  return 0.84;
+function getMouthCameraZoom(): number {
+  const largestValue = getLargestLiveMouthValue();
+
+  if (largestValue <= 2) return 3;
+  if (largestValue === 3) return 2.25;
+  if (largestValue === 4) return 1.68;
+  if (largestValue === 5) return 1.28;
+  return 1;
 }
 
 function sumCapturedIds(cardIds: number[], scoringPlayerId: string): number {
@@ -2726,6 +2729,9 @@ function renderRoundActionButtons(): string {
 
 function renderMouth(): string {
   const liveFishCount = getLiveMouthNumericCards().filter((card) => card.type === "fish").length;
+  const largestLiveValue = getLargestLiveMouthValue();
+  const cameraFrom = mouthFishMotion?.cameraFrom ?? getMouthCameraZoom();
+  const cameraTo = mouthFishMotion?.cameraTo ?? getMouthCameraZoom();
   const mouthClass = isMouthOpen
     ? "is-open"
     : biteAftermath
@@ -2736,20 +2742,25 @@ function renderMouth(): string {
     : "もぐもぐ…ごっくん！";
 
   return `
-    <div class="mouth ${mouthClass}">
+    <div class="mouth ${mouthClass} camera-value-${largestLiveValue}">
       <img class="whale-face whale-face-closed" src="./assets/mouth/whale-front.png" alt="" aria-hidden="true">
-      <img class="whale-face whale-face-open" src="./assets/mouth/whale-open.png" alt="" aria-hidden="true">
       <img class="whale-face whale-face-fed" src="./assets/mouth/whale-fed.png" alt="" aria-hidden="true">
       <div class="jaw jaw-top" aria-hidden="true">
         <span></span><span></span><span></span><span></span><span></span>
       </div>
-      <div class="mouth-cavity">
-        <div class="cavity-meta">
-          <span>泳いでいる魚 ${liveFishCount}匹</span>
-          <span>${activePoison ? `毒魚: ${activePoison.ownerName}` : "毒魚なし"}</span>
-          ${activePoison ? `<small class="poison-countdown" data-poison-countdown>${getPoisonCountdownLabel()}</small>` : ""}
+      <div
+        class="mouth-camera-layer ${mouthFishMotion ? "is-camera-moving" : ""}"
+        style="--camera-from:${cameraFrom}; --camera-to:${cameraTo}; --mouth-camera-zoom:${cameraTo}"
+      >
+        <img class="whale-face whale-face-open" src="./assets/mouth/whale-open.png" alt="" aria-hidden="true">
+        <div class="mouth-cavity">
+          ${renderMouthFishScene()}
         </div>
-        ${renderMouthFishScene()}
+      </div>
+      <div class="cavity-meta">
+        <span>泳いでいる魚 ${liveFishCount}匹</span>
+        <span>${activePoison ? `毒魚: ${activePoison.ownerName}` : "毒魚なし"}</span>
+        ${activePoison ? `<small class="poison-countdown" data-poison-countdown>${getPoisonCountdownLabel()}</small>` : ""}
       </div>
       <div class="jaw jaw-bottom" aria-hidden="true">
         <span></span><span></span><span></span><span></span><span></span>
@@ -2776,21 +2787,22 @@ function renderMouthFishScene(): string {
       return card.type === "poison" && (card.status === "active" || motionIds.has(card.boxId));
     })
     .sort((left, right) => left.sequence - right.sequence);
-  const cameraFrom = mouthFishMotion?.cameraFrom ?? getMouthCameraZoom();
   const cameraTo = mouthFishMotion?.cameraTo ?? getMouthCameraZoom();
-  const cameraLabel = cameraTo >= 1.4
-    ? "小さな魚をアップ"
-    : cameraTo < 1
-      ? "大きな魚までワイド"
-      : "魚を追跡中";
+  const cameraLabel = cameraTo >= 2.5
+    ? "口の奥へ大ズーム"
+    : cameraTo >= 1.5
+      ? "口の中を追跡中"
+      : cameraTo > 1
+        ? "親の顔へズームアウト"
+        : "最大魚を口いっぱいに表示";
   const predator = mouthFishMotion?.predatorId ? getBoxCard(mouthFishMotion.predatorId) : null;
   const predatorPosition = predator ? getMouthFishPosition(predator) : null;
 
   return `
     <div class="mouth-fish-stage" role="group" aria-label="口の中を泳ぐ魚">
       <div
-        class="mouth-fish-world ${mouthFishMotion ? "is-camera-moving" : ""}"
-        style="--camera-from:${cameraFrom}; --camera-to:${cameraTo}; --mouth-zoom:${cameraTo}"
+        class="mouth-fish-world"
+        style="--mouth-zoom:1"
       >
         <span class="water-bubble bubble-one" aria-hidden="true"></span>
         <span class="water-bubble bubble-two" aria-hidden="true"></span>
@@ -2886,31 +2898,36 @@ function renderMouthFishVisual(card: BaitBoxCard | FishBoxCard | PoisonBoxCard):
 }
 
 function getMouthFishPosition(card: BoxCard): { x: number; y: number } {
-  if (card.type === "bait") return { x: 42, y: 58 };
+  if (card.type === "bait") return { x: 46, y: 55 };
+  if (card.type === "poison") return { x: 50, y: 52 };
 
-  const positions = [
-    { x: 55, y: 50 },
-    { x: 36, y: 38 },
-    { x: 67, y: 64 },
-    { x: 31, y: 68 },
-    { x: 70, y: 34 },
-    { x: 48, y: 29 },
-    { x: 51, y: 72 },
-    { x: 25, y: 50 },
-    { x: 76, y: 53 }
-  ];
+  const positions = card.type === "fish" && card.value >= 6
+    ? [{ x: 50, y: 52 }]
+    : card.type === "fish" && card.value === 5
+      ? [{ x: 47, y: 50 }, { x: 53, y: 54 }]
+      : card.type === "fish" && card.value === 4
+        ? [{ x: 44, y: 48 }, { x: 56, y: 56 }, { x: 50, y: 52 }]
+        : card.type === "fish" && card.value === 3
+          ? [{ x: 42, y: 47 }, { x: 58, y: 57 }, { x: 50, y: 52 }]
+          : [
+              { x: 39, y: 44 },
+              { x: 54, y: 48 },
+              { x: 45, y: 59 },
+              { x: 61, y: 57 },
+              { x: 50, y: 52 }
+            ];
   return positions[Math.abs(card.sequence - 2) % positions.length];
 }
 
 function getMouthFishSize(card: BoxCard): number {
   if (card.type === "bait") return 8;
-  if (card.type === "poison") return 31;
+  if (card.type === "poison") return 30;
   if (card.type !== "fish") return 12;
-  if (card.value === 2) return 24;
-  if (card.value === 3) return 29;
-  if (card.value === 4) return 35;
-  if (card.value === 5) return 43;
-  return 50;
+  if (card.value === 2) return 36;
+  if (card.value === 3) return 36;
+  if (card.value === 4) return 27;
+  if (card.value === 5) return 37;
+  return 38;
 }
 
 function getMouthFishActorLabel(card: BoxCard): string {

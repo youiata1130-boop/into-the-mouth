@@ -2804,6 +2804,10 @@ body {
   .detail-screen .bottom-info {
     grid-template-columns: 1fr;
   }
+
+  .board-screen .mouth {
+    min-height: 360px;
+  }
 }
 
 .participant-panel {
@@ -3117,6 +3121,21 @@ body {
   display: none;
 }
 
+.board-screen .mouth-camera-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  transform: scale(var(--mouth-camera-zoom, 1));
+  transform-origin: 50% 61%;
+  will-change: transform;
+}
+
+.board-screen .mouth-camera-layer.is-camera-moving {
+  animation: mouth-scene-pullback 820ms cubic-bezier(0.2, 0.72, 0.22, 1) both;
+}
+
 .board-screen .mouth.is-open .whale-face,
 .board-screen .mouth.is-closed .whale-face {
   opacity: 0;
@@ -3137,7 +3156,7 @@ body {
 .board-screen .mouth.is-open .mouth-cavity {
   width: min(70%, 470px);
   min-height: 166px;
-  padding: 8px 22px;
+  padding: 0;
   visibility: visible;
   opacity: 1;
   border: 0;
@@ -3149,7 +3168,22 @@ body {
 }
 
 .board-screen .mouth.is-open .cavity-meta {
+  position: absolute;
+  left: 10px;
+  top: 10px;
+  z-index: 8;
+  max-width: calc(100% - 20px);
+  border: 1px solid rgba(255, 255, 255, 0.38);
+  border-radius: 999px;
+  padding: 4px 9px;
+  background: rgba(34, 11, 30, 0.64);
+  box-shadow: 0 5px 12px rgba(31, 8, 25, 0.16);
   text-shadow: 0 2px 3px rgba(36, 4, 18, 0.95);
+  pointer-events: none;
+}
+
+.board-screen .mouth.is-closed .cavity-meta {
+  display: none;
 }
 
 .board-screen .mouth.is-open .mouth-card-stack {
@@ -3251,7 +3285,7 @@ body {
   .board-screen .mouth.is-open .mouth-cavity {
     width: 84%;
     min-height: 148px;
-    padding-inline: 10px;
+    padding: 0;
     transform: translateY(32px);
   }
 
@@ -3428,10 +3462,31 @@ body {
 /* The live mouth is an animated aquarium rather than a stack of cards. */
 .mouth-fish-stage {
   position: relative;
-  min-height: 132px;
+  min-height: 166px;
   overflow: hidden;
-  border-radius: 42% / 36%;
+  border-radius: 48% / 43%;
+  background:
+    radial-gradient(ellipse at 50% 88%, rgba(205, 77, 102, 0.46), transparent 45%),
+    radial-gradient(ellipse at 50% 48%, #5c1830 0%, #310a1d 64%, #16050f 100%);
+  box-shadow:
+    inset 0 12px 18px rgba(18, 0, 8, 0.86),
+    inset 0 -12px 15px rgba(190, 70, 91, 0.4);
+  clip-path: ellipse(48% 43% at 50% 52%);
   isolation: isolate;
+}
+
+.mouth-fish-stage::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 9;
+  border-radius: inherit;
+  background:
+    radial-gradient(ellipse at 50% 52%, transparent 61%, rgba(25, 0, 12, 0.38) 84%, rgba(13, 0, 7, 0.78) 100%);
+  box-shadow:
+    inset 0 13px 17px rgba(18, 0, 8, 0.72),
+    inset 0 -11px 14px rgba(190, 70, 91, 0.3);
+  pointer-events: none;
 }
 
 .mouth-fish-world {
@@ -3505,6 +3560,30 @@ body {
   will-change: left, top, opacity, transform;
 }
 
+.mouth-fish-actor.value-2 {
+  width: min(48%, 170px);
+}
+
+.mouth-fish-actor.value-3 {
+  width: min(50%, 170px);
+}
+
+.mouth-fish-actor.value-4 {
+  width: min(42%, 126px);
+}
+
+.mouth-fish-actor.value-5 {
+  width: min(54%, 170px);
+}
+
+.mouth-fish-actor.value-6 {
+  width: min(58%, 180px);
+}
+
+.mouth-fish-actor.is-poison {
+  width: min(48%, 145px);
+}
+
 .mouth-fish-actor.is-entering:not(.is-prey) {
   animation: mouth-fish-enter 620ms cubic-bezier(0.18, 0.74, 0.22, 1.12) both;
 }
@@ -3534,54 +3613,94 @@ body {
   animation: mouth-predator-chomp 660ms cubic-bezier(0.28, 0.8, 0.34, 1) 170ms both;
 }
 
+.mouth-fish-actor:is(.value-5, .value-6).is-predator .mouth-fish-body {
+  animation-name: mouth-predator-chomp-safe;
+}
+
 .mouth-fish-cutout {
   position: relative;
   display: block;
   width: 100%;
-  aspect-ratio: 1.9;
+  aspect-ratio: 1.5;
   overflow: hidden;
   border-radius: 50%;
-  -webkit-mask-image: radial-gradient(ellipse 50% 48% at 50% 50%, #000 62%, transparent 96%);
-  mask-image: radial-gradient(ellipse 50% 48% at 50% 50%, #000 62%, transparent 96%);
+  -webkit-mask-image: radial-gradient(ellipse 62% 68% at 50% 50%, #000 84%, transparent 100%);
+  mask-image: radial-gradient(ellipse 62% 68% at 50% 50%, #000 84%, transparent 100%);
 }
 
 .mouth-fish-cutout img {
   position: absolute;
-  left: 50%;
-  top: 50%;
+  left: 52%;
+  top: 49%;
   width: 100%;
   max-width: none;
   height: auto;
-  transform: translate(-50%, -50%) scale(1.58);
+  transform: translate(-50%, -50%) scale(1.08);
   -webkit-user-drag: none;
   user-select: none;
 }
 
+.mouth-fish-actor.value-2 .mouth-fish-cutout {
+  aspect-ratio: 3.55;
+  -webkit-mask-image: radial-gradient(ellipse 58% 82% at 50% 50%, #000 86%, transparent 100%);
+  mask-image: radial-gradient(ellipse 58% 82% at 50% 50%, #000 86%, transparent 100%);
+}
+
+.mouth-fish-actor.value-2 .mouth-fish-cutout img {
+  left: 51%;
+  top: 49%;
+  transform: translate(-50%, -50%) scale(1.5);
+}
+
 .mouth-fish-actor.value-4 .mouth-fish-cutout {
-  width: 82%;
-  margin-inline: auto;
+  width: 100%;
   aspect-ratio: 1;
-  -webkit-mask-image: radial-gradient(circle at 50% 50%, #000 64%, transparent 96%);
-  mask-image: radial-gradient(circle at 50% 50%, #000 64%, transparent 96%);
+  -webkit-mask-image: radial-gradient(circle at 50% 50%, #000 84%, transparent 100%);
+  mask-image: radial-gradient(circle at 50% 50%, #000 84%, transparent 100%);
 }
 
 .mouth-fish-actor.value-4 .mouth-fish-cutout img {
-  transform: translate(-50%, -50%) scale(1.08);
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%) scale(1.02);
+}
+
+.mouth-fish-actor.value-5 .mouth-fish-cutout,
+.mouth-fish-actor.value-6 .mouth-fish-cutout {
+  aspect-ratio: 1.34;
+}
+
+.mouth-fish-actor.value-5 .mouth-fish-cutout img,
+.mouth-fish-actor.value-6 .mouth-fish-cutout img {
+  left: 50%;
+  top: 48.5%;
+  transform: translate(-50%, -50%) scale(1);
+}
+
+.mouth-fish-actor.is-poison .mouth-fish-cutout {
+  aspect-ratio: 1.28;
+}
+
+.mouth-fish-actor.is-poison .mouth-fish-cutout img {
+  left: 52%;
+  top: 49.2%;
+  transform: translate(-50%, -50%) scale(1);
 }
 
 .mouth-fish-cutout.is-school-mate {
   position: absolute;
-  left: -7%;
-  top: -12%;
+  left: 3%;
+  top: 3%;
   z-index: -1;
+  width: 94%;
   opacity: 0.78;
-  transform: scale(0.9) rotate(-5deg);
+  transform: rotate(-5deg);
 }
 
 .mouth-fish-value {
   position: absolute;
-  right: -3%;
-  top: -8%;
+  right: 3%;
+  top: 4%;
   z-index: 4;
   display: grid;
   min-width: clamp(22px, 4.2vw, 34px);
@@ -3606,7 +3725,7 @@ body {
 .mouth-fish-owner {
   position: absolute;
   left: 50%;
-  bottom: -3px;
+  bottom: 4%;
   z-index: 4;
   max-width: 92%;
   overflow: hidden;
@@ -3649,8 +3768,8 @@ body {
 }
 
 .mouth-fish-actor.is-bait .mouth-fish-value {
-  right: -16%;
-  top: -18%;
+  right: 0;
+  top: 0;
 }
 
 .mouth-fish-actor.is-poison .mouth-fish-body {
@@ -3714,6 +3833,11 @@ body {
 }
 
 @keyframes mouth-camera-pullback {
+  from { transform: scale(var(--camera-from)); }
+  to { transform: scale(var(--camera-to)); }
+}
+
+@keyframes mouth-scene-pullback {
   from { transform: scale(var(--camera-from)); }
   to { transform: scale(var(--camera-to)); }
 }
@@ -3788,6 +3912,14 @@ body {
   76% { transform: scale(1.07, 0.95); }
 }
 
+@keyframes mouth-predator-chomp-safe {
+  0%,
+  100% { transform: scale(1); }
+  32% { transform: scale(1.08, 0.88) rotate(-2deg); }
+  55% { transform: scale(0.98, 1) rotate(2deg); }
+  76% { transform: scale(1.05, 0.94); }
+}
+
 @keyframes mouth-fish-float {
   0%,
   100% { transform: translateY(-2px) rotate(-1deg); }
@@ -3807,8 +3939,40 @@ body {
 }
 
 @media (max-width: 560px) {
+  .board-screen .mouth {
+    min-height: 300px;
+  }
+
   .mouth-fish-stage {
-    min-height: 116px;
+    min-height: 112px;
+  }
+
+  .board-screen .mouth.is-open .mouth-cavity {
+    min-height: 112px;
+  }
+
+  .mouth-fish-actor.value-2 {
+    width: min(52%, 170px);
+  }
+
+  .mouth-fish-actor.value-3 {
+    width: min(44%, 130px);
+  }
+
+  .mouth-fish-actor.value-4 {
+    width: min(30%, 90px);
+  }
+
+  .mouth-fish-actor.value-5 {
+    width: min(39%, 120px);
+  }
+
+  .mouth-fish-actor.value-6 {
+    width: min(42%, 126px);
+  }
+
+  .mouth-fish-actor.is-poison {
+    width: min(40%, 118px);
   }
 
   .mouth-camera-readout {
@@ -3823,6 +3987,12 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .board-screen .mouth-camera-layer,
+  .board-screen .mouth-camera-layer.is-camera-moving {
+    animation: none;
+    transform: scale(var(--camera-to, var(--mouth-camera-zoom, 1)));
+  }
+
   .mouth-fish-world,
   .mouth-fish-world.is-camera-moving {
     animation: none;
