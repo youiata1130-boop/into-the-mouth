@@ -59,8 +59,6 @@ type MouthFishMotion = {
   enteringId: number;
   predatorId: number | null;
   preyIds: number[];
-  cameraFrom: number;
-  cameraTo: number;
 };
 type GameMode = "pvp" | "cpu" | "online";
 type OnlineRole = "none" | "host" | "guest";
@@ -1027,7 +1025,6 @@ function playFish(player: Player, slotIndex: number): void {
 
   if (!card || card.type !== "fish") return;
 
-  const cameraFrom = getMouthCameraZoom();
   const liveBeforeIds = new Set(getLiveMouthNumericCards().map((item) => item.boxId));
   const fishBoxCard: FishBoxCard = {
     boxId: nextBoxCardId++,
@@ -1052,7 +1049,7 @@ function playFish(player: Player, slotIndex: number): void {
 
   if (activePoison?.ownerId === player.id) {
     fishBoxCard.invalidatedByOwnPoison = true;
-    startFishEntryMotion(fishBoxCard, liveBeforeIds, cameraFrom, player.id);
+    startFishEntryMotion(fishBoxCard, liveBeforeIds, player.id);
     addLog(`${player.name} は自分の毒魚に続けて${getFishCardLabel(card)}を出したため、このカードは効果も得点価値も持ちません。`);
     render();
     return;
@@ -1067,14 +1064,14 @@ function playFish(player: Player, slotIndex: number): void {
     clearPoisonRemovalTimer();
     addLog(`${player.name} が${getFishCardLabel(card)}を出しました。${activePoison.ownerName} の毒魚が発動し、${activePoison.ownerName} が ${card.value} 点を確定しました。`);
     activePoison = null;
-    startFishEntryMotion(fishBoxCard, liveBeforeIds, cameraFrom, player.id);
+    startFishEntryMotion(fishBoxCard, liveBeforeIds, player.id);
     render();
     return;
   }
 
   fishBoxCard.capturedIds = resolvePredation(fishBoxCard);
 
-  startFishEntryMotion(fishBoxCard, liveBeforeIds, cameraFrom, player.id);
+  startFishEntryMotion(fishBoxCard, liveBeforeIds, player.id);
   const capturedTotal = sumCapturedIds(fishBoxCard.capturedIds, fishBoxCard.ownerId);
   const predator = fishBoxCard.consumedById ? getBoxCard(fishBoxCard.consumedById) : null;
   const detail = predator?.type === "fish"
@@ -1091,7 +1088,6 @@ function playFish(player: Player, slotIndex: number): void {
 function startFishEntryMotion(
   fish: FishBoxCard,
   liveBeforeIds: Set<number>,
-  cameraFrom: number,
   playerId: string
 ): void {
   const predatorId = fish.consumedById ?? (fish.capturedIds.length > 0 ? fish.boxId : null);
@@ -1109,9 +1105,7 @@ function startFishEntryMotion(
     {
       enteringId: fish.boxId,
       predatorId,
-      preyIds: [...new Set(preyIds)],
-      cameraFrom,
-      cameraTo: getMouthCameraZoom()
+      preyIds: [...new Set(preyIds)]
     },
     playerId
   );
@@ -1128,7 +1122,6 @@ function playPoison(player: Player, slotIndex: number): void {
 
   if (!card || card.type !== "poison") return;
 
-  const cameraZoom = getMouthCameraZoom();
   const previousPoison = activePoison;
 
   if (previousPoison) {
@@ -1155,9 +1148,7 @@ function playPoison(player: Player, slotIndex: number): void {
     {
       enteringId: poisonBoxCard.boxId,
       predatorId: null,
-      preyIds: [],
-      cameraFrom: cameraZoom,
-      cameraTo: cameraZoom
+      preyIds: []
     },
     player.id
   );
@@ -1250,23 +1241,6 @@ function getLiveMouthNumericCards(): Array<BaitBoxCard | FishBoxCard> {
       !card.escaped
     );
   });
-}
-
-function getLargestLiveMouthValue(): number {
-  return getLiveMouthNumericCards().reduce(
-    (largest, card) => Math.max(largest, card.value),
-    1
-  );
-}
-
-function getMouthCameraZoom(): number {
-  const largestValue = getLargestLiveMouthValue();
-
-  if (largestValue <= 2) return 3;
-  if (largestValue === 3) return 2.25;
-  if (largestValue === 4) return 1.68;
-  if (largestValue === 5) return 1.28;
-  return 1;
 }
 
 function sumCapturedIds(cardIds: number[], scoringPlayerId: string): number {
@@ -2624,7 +2598,7 @@ function renderTryReplayCard(card: BoxCard): string {
     ? "is-bait"
     : card.type === "poison"
       ? "is-poison"
-      : `value-${card.value}${card.schoolSize === 2 ? " is-school" : ""}`;
+      : `value-${card.value} size-value-${card.schoolBaseValue ?? card.value} art-value-${card.schoolBaseValue ?? card.value}${card.schoolSize === 2 ? " is-school" : ""}`;
 
   return `
     <div class="try-replay-fish ${typeClass} ${getPlayerToneClass(card.ownerId)}" aria-label="${getMouthFishActorLabel(card)}">
@@ -2867,9 +2841,6 @@ function renderRoundActionButtons(): string {
 
 function renderMouth(): string {
   const liveFishCount = getLiveMouthNumericCards().filter((card) => card.type === "fish").length;
-  const largestLiveValue = getLargestLiveMouthValue();
-  const cameraFrom = mouthFishMotion?.cameraFrom ?? getMouthCameraZoom();
-  const cameraTo = mouthFishMotion?.cameraTo ?? getMouthCameraZoom();
   const mouthClass = isMouthOpen
     ? "is-open"
     : biteAftermath
@@ -2880,16 +2851,13 @@ function renderMouth(): string {
     : "もぐもぐ…ごっくん！";
 
   return `
-    <div class="mouth ${mouthClass} camera-value-${largestLiveValue}">
+    <div class="mouth ${mouthClass}">
       <img class="whale-face whale-face-closed" src="./assets/mouth/whale-front.png" alt="" aria-hidden="true">
       <img class="whale-face whale-face-fed" src="./assets/mouth/whale-fed.png" alt="" aria-hidden="true">
       <div class="jaw jaw-top" aria-hidden="true">
         <span></span><span></span><span></span><span></span><span></span>
       </div>
-      <div
-        class="mouth-camera-layer ${mouthFishMotion ? "is-camera-moving" : ""}"
-        style="--camera-from:${cameraFrom}; --camera-to:${cameraTo}; --mouth-camera-zoom:${cameraTo}"
-      >
+      <div class="mouth-camera-layer">
         <img class="whale-face whale-face-open" src="./assets/mouth/whale-open.png" alt="" aria-hidden="true">
         <div class="mouth-cavity">
           ${renderMouthFishScene()}
@@ -2925,23 +2893,12 @@ function renderMouthFishScene(): string {
       return card.type === "poison" && (card.status === "active" || motionIds.has(card.boxId));
     })
     .sort((left, right) => left.sequence - right.sequence);
-  const cameraTo = mouthFishMotion?.cameraTo ?? getMouthCameraZoom();
-  const cameraLabel = cameraTo >= 2.5
-    ? "口の奥へ大ズーム"
-    : cameraTo >= 1.5
-      ? "口の中を追跡中"
-      : cameraTo > 1
-        ? "親の顔へズームアウト"
-        : "最大魚を口いっぱいに表示";
   const predator = mouthFishMotion?.predatorId ? getBoxCard(mouthFishMotion.predatorId) : null;
   const predatorPosition = predator ? getMouthFishPosition(predator) : null;
 
   return `
     <div class="mouth-fish-stage" role="group" aria-label="口の中を泳ぐ魚">
-      <div
-        class="mouth-fish-world"
-        style="--mouth-zoom:1"
-      >
+      <div class="mouth-fish-world">
         <span class="water-bubble bubble-one" aria-hidden="true"></span>
         <span class="water-bubble bubble-two" aria-hidden="true"></span>
         <span class="water-bubble bubble-three" aria-hidden="true"></span>
@@ -2952,7 +2909,6 @@ function renderMouthFishScene(): string {
             : ""
         }
       </div>
-      <span class="mouth-camera-readout" aria-hidden="true">${cameraLabel} · ×${cameraTo.toFixed(2)}</span>
       ${
         mouthFishMotion
           ? `<span class="visually-hidden" role="status" aria-live="polite">${getMouthFishMotionAnnouncement()}</span>`
@@ -2995,10 +2951,13 @@ function renderMouthFishActor(card: BoxCard): string {
     : card.type === "poison"
       ? "is-poison"
       : "is-bait";
+  const visualClass = card.type === "fish"
+    ? `size-value-${card.schoolBaseValue ?? card.value} art-value-${card.schoolBaseValue ?? card.value}`
+    : "";
 
   return `
     <article
-      class="mouth-fish-actor ${statusClass} ${card.type === "fish" ? `value-${card.value}` : ""} ${motionClass} ${getPlayerToneClass(card.ownerId)}"
+      class="mouth-fish-actor ${statusClass} ${card.type === "fish" ? `value-${card.value}` : ""} ${visualClass} ${motionClass} ${getPlayerToneClass(card.ownerId)}"
       style="${style}"
       aria-label="${getMouthFishActorLabel(card)}"
     >
@@ -3058,14 +3017,15 @@ function getMouthFishPosition(card: BoxCard): { x: number; y: number } {
 }
 
 function getMouthFishSize(card: BoxCard): number {
-  if (card.type === "bait") return 8;
-  if (card.type === "poison") return 30;
+  if (card.type === "bait") return 6;
+  if (card.type === "poison") return 28;
   if (card.type !== "fish") return 12;
-  if (card.value === 2) return 36;
-  if (card.value === 3) return 36;
-  if (card.value === 4) return 27;
-  if (card.value === 5) return 37;
-  return 38;
+  const visualValue = card.schoolBaseValue ?? card.value;
+  if (visualValue === 2) return 18;
+  if (visualValue === 3) return 26;
+  if (visualValue === 4) return 34;
+  if (visualValue === 5) return 43;
+  return 50;
 }
 
 function getMouthFishActorLabel(card: BoxCard): string {
