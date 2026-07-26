@@ -205,49 +205,94 @@
   font-size: clamp(2.5rem, 8vw, 4.8rem);
 }
 
-.lobby-actions {
+.online-entry-options {
   display: grid;
-  grid-template-columns: 1fr 1.4fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
-  align-items: stretch;
+  max-width: 600px;
+  margin: 0 auto;
 }
 
-.lobby-action {
-  min-height: 58px;
-  font-size: 1rem;
-}
-
-.join-box {
+.online-entry-card {
+  min-height: 172px;
   display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 8px;
+  place-items: center;
+  align-content: center;
+  gap: 10px;
+  border: 2px solid transparent;
+  border-radius: 18px;
+  padding: 22px;
+  color: var(--ink);
+  cursor: pointer;
+  transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.online-entry-card.is-create { background: #fff3dd; }
+.online-entry-card.is-join { background: #eef0ff; }
+
+.online-entry-card:hover,
+.online-entry-card:focus-visible {
+  transform: translateY(-4px);
+  border-color: var(--teal);
+  box-shadow: 0 16px 30px rgba(18, 38, 43, 0.14);
+}
+
+.online-entry-icon {
+  width: 58px;
+  height: 58px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #fff;
+  color: var(--teal-dark);
+  font-size: 1.2rem;
+  font-weight: 1000;
+  box-shadow: 0 8px 20px rgba(18, 38, 43, 0.1);
+}
+
+.online-entry-card strong { font-size: 1.2rem; }
+.online-entry-card small { color: var(--muted); font-weight: 800; line-height: 1.55; }
+
+.online-setup-panel,
+.online-room-settings {
+  max-width: 600px;
+  margin: 24px auto 0;
   border: 1px solid var(--line);
-  border-radius: 14px;
-  padding: 12px;
+  border-radius: 18px;
+  padding: clamp(16px, 4vw, 24px);
   background: var(--panel-soft);
   text-align: left;
 }
 
-.create-box {
-  display: grid;
-  gap: 8px;
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  padding: 12px;
-  background: #fff3dd;
-  text-align: left;
+.online-setup-panel > h2 {
+  color: var(--teal-dark);
+  font-size: 1.35rem;
 }
 
-.join-box label,
-.create-box label {
-  grid-column: 1 / -1;
+.online-setup-copy,
+.online-setting-group > p {
+  margin: 7px 0 16px;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 700;
+  line-height: 1.55;
+}
+
+.online-form {
+  display: grid;
+  gap: 8px;
+}
+
+.online-host-name { margin-bottom: 20px; }
+
+.online-form label {
   color: var(--muted);
   font-size: 0.72rem;
   font-weight: 900;
 }
 
-.join-box input,
-.create-box input {
+.online-form input {
+  width: 100%;
   min-width: 0;
   border: 2px solid #c9dddb;
   border-radius: 9px;
@@ -255,10 +300,116 @@
   background: #fff;
   color: var(--ink);
   font: inherit;
-  font-size: 1.2rem;
-  font-weight: 1000;
+  font-size: 1rem;
+  font-weight: 900;
+}
+
+.online-form .room-code-input {
+  font-size: 1.25rem;
   letter-spacing: 0.14em;
   text-transform: uppercase;
+}
+
+.online-form .lobby-action { margin-top: 8px; }
+
+.online-setup-panel > .lobby-action {
+  width: 100%;
+  margin-top: 16px;
+}
+
+.online-setting-group {
+  min-width: 0;
+  margin: 0;
+  border: 0;
+  padding: 0;
+}
+
+.online-setting-group legend,
+.online-settings-heading h2 {
+  color: var(--ink);
+  font-size: 0.9rem;
+  font-weight: 1000;
+}
+
+.online-settings-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.online-settings-heading span {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 800;
+}
+
+.online-setup-panel .count-options,
+.online-room-settings .count-options {
+  margin-bottom: 18px;
+}
+
+.online-setup-panel .count-option,
+.online-room-settings .count-option {
+  min-height: 76px;
+}
+
+.online-room-settings .difficulty-section,
+.online-setup-panel .difficulty-section {
+  margin-bottom: 16px;
+}
+
+.online-cpu-note {
+  margin: 0;
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: #e9f7f5;
+  color: var(--teal-dark);
+  font-size: 0.8rem;
+  font-weight: 900;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.online-room-summary {
+  max-width: 600px;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin: 16px auto 0;
+}
+
+.online-room-summary span {
+  display: grid;
+  gap: 3px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px 6px;
+  background: #fff;
+}
+
+.online-room-summary strong {
+  color: var(--teal-dark);
+  font-size: 1.15rem;
+}
+
+.online-room-summary small {
+  color: var(--muted);
+  font-size: 0.65rem;
+  font-weight: 900;
+}
+
+.lobby-action {
+  min-height: 58px;
+  font-size: 1rem;
+}
+
+.lobby-hint {
+  margin: 10px auto 0;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 800;
 }
 
 .room-label {
@@ -298,13 +449,28 @@
   animation: lobby-spin 0.8s linear infinite;
 }
 
+.online-error-mark {
+  width: 52px;
+  height: 52px;
+  display: grid;
+  place-items: center;
+  margin: 28px auto 8px;
+  border-radius: 50%;
+  background: #fff2f2;
+  color: var(--coral-dark);
+  font-size: 1.6rem;
+  font-weight: 1000;
+}
+
 @keyframes lobby-spin { to { transform: rotate(360deg); } }
 
 @media (max-width: 620px) {
   .mode-grid { grid-template-columns: 1fr; }
   .mode-card { min-height: 148px; }
-  .lobby-actions { grid-template-columns: 1fr; }
-  .join-box { grid-template-columns: 1fr; }
+  .online-entry-options { grid-template-columns: 1fr; }
+  .online-entry-card { min-height: 138px; }
+  .online-room-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .online-settings-heading { align-items: flex-start; flex-direction: column; gap: 4px; }
   .count-options { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .count-option { min-height: 88px; }
   .difficulty-options { grid-template-columns: 1fr; }
@@ -340,6 +506,7 @@ button:disabled {
 }
 
 button:focus-visible,
+input:focus-visible,
 select:focus-visible,
 summary:focus-visible,
 .try-result-panel:focus-visible {
@@ -2863,6 +3030,12 @@ body {
   font-size: 0.68rem;
 }
 
+.participant-list .cpu-participant {
+  border: 1px dashed #c9dddb;
+  background: #f2f8f7;
+  color: var(--teal-dark);
+}
+
 .board-screen .center-stage.no-parent-controls {
   grid-template-columns: minmax(0, 1fr);
 }
@@ -4122,6 +4295,23 @@ body {
   grid-column: 1;
   grid-row: 2;
   color: var(--player-ink);
+  font-weight: 800;
+}
+
+.online-game-settings {
+  justify-content: space-between;
+}
+
+.online-game-settings p {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin: 0;
+}
+
+.online-game-settings p span {
+  color: var(--muted);
+  font-size: 0.8rem;
   font-weight: 800;
 }
 

@@ -62,6 +62,7 @@ type MouthFishMotion = {
 };
 type GameMode = "pvp" | "cpu" | "online";
 type OnlineRole = "none" | "host" | "guest";
+type OnlineLobbyView = "choice" | "create" | "join";
 type CpuDifficulty = "easy" | "normal" | "hard";
 type NpcChildAction =
   | { type: "play" | "escape"; slotIndex: number }
@@ -81,6 +82,7 @@ type StackDragState = {
 type OnlineLobbyMember = { playerId: string; name: string; isHost: boolean };
 type OnlineGameState = {
   playerCount: number;
+  cpuDifficulty?: CpuDifficulty;
   parentIndex: number;
   completedParentRounds: number;
   currentTry: number;
@@ -119,6 +121,7 @@ let pendingGameMode: GameMode = "cpu";
 let cpuDifficulty: CpuDifficulty = "normal";
 let onlineLobbyOpen = false;
 let onlineRole: OnlineRole = "none";
+let onlineLobbyView: OnlineLobbyView = "choice";
 let onlinePeer: Peer | null = null;
 let hostConnection: DataConnection | null = null;
 let guestConnections: DataConnection[] = [];
@@ -131,6 +134,7 @@ let roomCode = "";
 let draftRoomCode = "";
 let draftPlayerName = "";
 let onlineStatus = "";
+let onlineJoinRejected = false;
 let playerCount = 4;
 let draftPlayerCount = 4;
 let parentIndex = 0;
@@ -174,7 +178,11 @@ const simpleActions: Record<string, () => void> = {
   "start-pvp": () => openModeSetup("pvp"),
   "start-cpu": () => openModeSetup("cpu"),
   "back-to-title": returnToTitle,
-  "open-online-lobby": () => openModeSetup("online"),
+  "open-online-lobby": openOnlineLobby,
+  "choose-create-room": () => showOnlineLobbyView("create"),
+  "choose-join-room": () => showOnlineLobbyView("join"),
+  "back-online-choice": () => showOnlineLobbyView("choice"),
+  "retry-online-join": retryOnlineJoin,
   "confirm-player-count": confirmPlayerCount,
   "create-room": createOnlineRoom,
   "join-room": joinOnlineRoom,
@@ -204,15 +212,26 @@ appRoot.addEventListener("click", (event) => {
 
   const countButton = target.closest<HTMLButtonElement>("button[data-player-count]");
   if (countButton) {
-    draftPlayerCount = Number(countButton.dataset.playerCount);
+    const nextPlayerCount = Number(countButton.dataset.playerCount);
+    if (!Number.isInteger(nextPlayerCount) || nextPlayerCount < 3 || nextPlayerCount > 6) return;
+    if (onlineLobbyOpen && onlineRole === "guest") return;
+    if (onlineLobbyOpen && onlineRole === "host" && nextPlayerCount < getMinimumOnlinePlayerCount()) return;
+
+    draftPlayerCount = nextPlayerCount;
     if (draftParentIndex >= draftPlayerCount) draftParentIndex = 0;
+    if (onlineLobbyOpen && onlineRole === "host") broadcastOnlineLobby();
     render();
     return;
   }
 
   const difficultyButton = target.closest<HTMLButtonElement>("button[data-cpu-difficulty]");
   if (difficultyButton) {
-    cpuDifficulty = difficultyButton.dataset.cpuDifficulty as CpuDifficulty;
+    const nextDifficulty = difficultyButton.dataset.cpuDifficulty;
+    if (!isCpuDifficulty(nextDifficulty)) return;
+    if (onlineLobbyOpen && onlineRole === "guest") return;
+
+    cpuDifficulty = nextDifficulty;
+    if (onlineLobbyOpen && onlineRole === "host") broadcastOnlineLobby();
     render();
     return;
   }
@@ -540,11 +559,7 @@ function openModeSetup(mode: GameMode): void {
 
 function confirmPlayerCount(): void {
   modeSetupOpen = false;
-  if (pendingGameMode === "online") {
-    openOnlineLobby();
-  } else {
-    startGame(pendingGameMode);
-  }
+  startGame(pendingGameMode);
 }
 
 function returnToTitle(): void {
@@ -564,8 +579,17 @@ function returnToTitle(): void {
 
 function openOnlineLobby(): void {
   gameMode = "online";
+  modeSetupOpen = false;
   onlineLobbyOpen = true;
-  onlineStatus = "部屋を作るか、参加コードを入力してください。";
+  onlineLobbyView = "choice";
+  onlineStatus = "部屋を作るか、友達の部屋に参加するかを選んでください。";
+  render();
+}
+
+function showOnlineLobbyView(view: OnlineLobbyView): void {
+  if (onlineRole !== "none") return;
+  onlineLobbyView = view;
+  onlineStatus = view === "choice" ? "遊び方を選んでください。" : "";
   render();
 }
 
@@ -573,6 +597,7 @@ function createOnlineRoom(): void {
   destroyOnlineSession();
   gameMode = "online";
   onlineRole = "host";
+  onlineLobbyView = "create";
   localPlayerId = "player-1";
   roomCode = createRoomCode();
   onlineHumanPlayerIds = new Set([localPlayerId]);
@@ -603,6 +628,8 @@ function joinOnlineRoom(): void {
   destroyOnlineSession();
   gameMode = "online";
   onlineRole = "guest";
+  onlineLobbyView = "join";
+  onlineJoinRejected = false;
   roomCode = draftRoomCode;
   onlineStatus = "部屋に接続しています…";
   render();
@@ -616,17 +643,33 @@ function joinOnlineRoom(): void {
     if (hostConnection) attachHostConnection(hostConnection);
   });
   onlinePeer.on("error", () => {
+    onlineJoinRejected = true;
     onlineStatus = "部屋が見つからないか、接続できませんでした。コードを確認してください。";
     render();
   });
 }
 
+function retryOnlineJoin(): void {
+  destroyOnlineSession();
+  gameMode = "online";
+  onlineLobbyOpen = true;
+  onlineLobbyView = "join";
+  onlineStatus = "参加コードを確認して、もう一度入力してください。";
+  render();
+}
+
 function attachGuestConnection(connection: DataConnection): void {
   connection.on("open", () => {
+    if (hasStarted) {
+      connection.send({ type: "room-started" });
+      window.setTimeout(() => connection.close(), 150);
+      return;
+    }
+
     const availableId = Array.from({ length: draftPlayerCount - 1 }, (_, index) => `player-${index + 2}`).find((id) => !onlineHumanPlayerIds.has(id));
     if (!availableId) {
       connection.send({ type: "room-full" });
-      connection.close();
+      window.setTimeout(() => connection.close(), 150);
       return;
     }
 
@@ -644,8 +687,9 @@ function attachGuestConnection(connection: DataConnection): void {
   connection.on("data", (data) => handleHostMessage(connection, data));
   connection.on("close", () => {
     const playerId = connectionPlayerIds.get(connection.peer);
-    if (playerId) onlineHumanPlayerIds.delete(playerId);
-    if (playerId) onlinePlayerNames.delete(playerId);
+    if (!playerId) return;
+    onlineHumanPlayerIds.delete(playerId);
+    onlinePlayerNames.delete(playerId);
     connectionPlayerIds.delete(connection.peer);
     guestConnections = guestConnections.filter((item) => item !== connection);
     onlineStatus = "参加者が退出しました。";
@@ -662,6 +706,13 @@ function attachHostConnection(connection: DataConnection): void {
   });
   connection.on("data", (data) => handleGuestMessage(data));
   connection.on("close", () => {
+    if (onlineRole !== "guest") return;
+    if (onlineJoinRejected) {
+      hasStarted = false;
+      onlineLobbyOpen = true;
+      render();
+      return;
+    }
     onlineStatus = "ホストとの接続が切れました。";
     hasStarted = false;
     onlineLobbyOpen = true;
@@ -722,21 +773,38 @@ function handleHostMessage(connection: DataConnection, raw: unknown): void {
 }
 
 function handleGuestMessage(raw: unknown): void {
-  const message = raw as { type?: string; playerId?: string; state?: OnlineGameState; members?: OnlineLobbyMember[]; playerCount?: number };
+  const message = raw as {
+    type?: string;
+    playerId?: string;
+    state?: OnlineGameState;
+    members?: OnlineLobbyMember[];
+    playerCount?: number;
+    cpuDifficulty?: CpuDifficulty;
+  };
   if (message.type === "welcome" && message.playerId) {
+    onlineJoinRejected = false;
     localPlayerId = message.playerId;
     onlineHumanPlayerIds.add(message.playerId);
     onlineStatus = "接続しました。ホストが開始するのを待っています。";
     render();
   } else if (message.type === "lobby" && message.members) {
+    onlineJoinRejected = false;
     onlineLobbyMembers = message.members;
-    if (message.playerCount) draftPlayerCount = message.playerCount;
+    if (typeof message.playerCount === "number" && Number.isInteger(message.playerCount) && message.playerCount >= 3 && message.playerCount <= 6) {
+      draftPlayerCount = message.playerCount;
+    }
+    if (isCpuDifficulty(message.cpuDifficulty)) cpuDifficulty = message.cpuDifficulty;
     onlineStatus = `${message.members.length}人が参加中です。ホストが開始するのを待っています。`;
     render();
   } else if (message.type === "state" && message.state) {
     applyOnlineState(message.state);
   } else if (message.type === "room-full") {
+    onlineJoinRejected = true;
     onlineStatus = "この部屋は満員です。";
+    render();
+  } else if (message.type === "room-started") {
+    onlineJoinRejected = true;
+    onlineStatus = "この部屋はすでにゲームを開始しています。";
     render();
   }
 }
@@ -765,6 +833,35 @@ function sanitizePlayerName(value: string | undefined, fallback: string): string
   return name || fallback;
 }
 
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>"']/g, (character) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    "\"": "&quot;",
+    "'": "&#039;"
+  })[character] ?? character);
+}
+
+function isCpuDifficulty(value: unknown): value is CpuDifficulty {
+  return value === "easy" || value === "normal" || value === "hard";
+}
+
+function getCpuDifficultyLabel(): string {
+  return { easy: "弱い", normal: "ふつう", hard: "強い" }[cpuDifficulty];
+}
+
+function getMinimumOnlinePlayerCount(): number {
+  const occupiedSeatNumbers = [...onlineHumanPlayerIds]
+    .map((playerId) => Number(playerId.match(/^player-(\d+)$/)?.[1] ?? 0))
+    .filter((seatNumber) => Number.isInteger(seatNumber));
+  return Math.max(3, ...occupiedSeatNumbers);
+}
+
+function getOnlineCpuCount(): number {
+  return Math.max(0, draftPlayerCount - onlineLobbyMembers.length);
+}
+
 function updateOnlineLobbyMembers(): void {
   onlineLobbyMembers = [...onlineHumanPlayerIds].map((playerId) => ({
     playerId,
@@ -774,14 +871,15 @@ function updateOnlineLobbyMembers(): void {
 }
 
 function broadcastOnlineLobby(): void {
-  const message = { type: "lobby", members: onlineLobbyMembers, playerCount: draftPlayerCount };
+  const message = { type: "lobby", members: onlineLobbyMembers, playerCount: draftPlayerCount, cpuDifficulty };
   guestConnections.filter((connection) => connection.open).forEach((connection) => connection.send(message));
 }
 
 function destroyOnlineSession(): void {
-  hostConnection?.close();
-  guestConnections.forEach((connection) => connection.close());
-  onlinePeer?.destroy();
+  const connectionToHost = hostConnection;
+  const connectionsToGuests = guestConnections;
+  const peerToDestroy = onlinePeer;
+
   clearCardPlayWaits();
   hostConnection = null;
   guestConnections = [];
@@ -791,7 +889,13 @@ function destroyOnlineSession(): void {
   onlineLobbyMembers = [];
   onlinePeer = null;
   onlineRole = "none";
+  onlineLobbyView = "choice";
+  onlineJoinRejected = false;
   roomCode = "";
+
+  connectionToHost?.close();
+  connectionsToGuests.forEach((connection) => connection.close());
+  peerToDestroy?.destroy();
 }
 
 function isRemoteGameAction(action: string): boolean {
@@ -1806,6 +1910,7 @@ function renderGameEffect(): string {
 function getOnlineState(): OnlineGameState {
   return {
     playerCount,
+    cpuDifficulty,
     parentIndex,
     completedParentRounds,
     currentTry,
@@ -1834,6 +1939,7 @@ function broadcastOnlineState(): void {
 
 function applyOnlineState(state: OnlineGameState): void {
   playerCount = state.playerCount;
+  if (isCpuDifficulty(state.cpuDifficulty)) cpuDifficulty = state.cpuDifficulty;
   parentIndex = state.parentIndex;
   completedParentRounds = state.completedParentRounds;
   currentTry = state.currentTry;
@@ -1942,23 +2048,34 @@ function render(): void {
           </div>
         </header>
 
-        <section class="setup-bar compact-setup" aria-label="ゲーム設定">
-          <label>
-            <span>人数</span>
-            <select name="playerCount" ${isMouthOpen ? " disabled" : ""}>
-              ${renderNumberOptions()}
-            </select>
-          </label>
-          <label>
-            <span>最初の親</span>
-            <select name="parentIndex" ${isMouthOpen ? " disabled" : ""}>
-              ${renderParentOptions()}
-            </select>
-          </label>
-          <button class="secondary-button" type="button" data-action="apply-setup" ${isMouthOpen ? " disabled" : ""}>この設定で新しく開始</button>
-          <button class="text-button" type="button" data-action="reset-game">全体を初期化</button>
-          <button class="text-button" type="button" data-action="back-to-title">タイトルへ戻る</button>
-        </section>
+        ${
+          gameMode === "online"
+            ? `
+              <section class="setup-bar compact-setup online-game-settings" aria-label="オンラインゲーム設定">
+                <p><strong>オンライン設定は固定されています</strong><span>${playerCount}人・CPUレベル ${getCpuDifficultyLabel()}</span></p>
+                <button class="text-button" type="button" data-action="back-to-title">タイトルへ戻る</button>
+              </section>
+            `
+            : `
+              <section class="setup-bar compact-setup" aria-label="ゲーム設定">
+                <label>
+                  <span>人数</span>
+                  <select name="playerCount" ${isMouthOpen ? " disabled" : ""}>
+                    ${renderNumberOptions()}
+                  </select>
+                </label>
+                <label>
+                  <span>最初の親</span>
+                  <select name="parentIndex" ${isMouthOpen ? " disabled" : ""}>
+                    ${renderParentOptions()}
+                  </select>
+                </label>
+                <button class="secondary-button" type="button" data-action="apply-setup" ${isMouthOpen ? " disabled" : ""}>この設定で新しく開始</button>
+                <button class="text-button" type="button" data-action="reset-game">全体を初期化</button>
+                <button class="text-button" type="button" data-action="back-to-title">タイトルへ戻る</button>
+              </section>
+            `
+        }
 
         <section class="bottom-info" aria-label="ログと細かい情報">
           ${renderRoundControls()}
@@ -2000,9 +2117,7 @@ function renderPlayerCountScreen(): string {
         <p class="start-eyebrow">${modeLabels[pendingGameMode]}</p>
         <h1 id="count-title">人数を選択</h1>
         <p class="start-lead">3〜6人から、今回のゲームに参加する人数を選んでください。</p>
-        <div class="count-options" role="group" aria-label="参加人数">
-          ${[3, 4, 5, 6].map((count) => `<button class="count-option${draftPlayerCount === count ? " selected" : ""}" type="button" data-player-count="${count}"><strong>${count}</strong><span>人</span></button>`).join("")}
-        </div>
+        ${renderPlayerCountOptions()}
         ${pendingGameMode === "pvp" ? "" : renderCpuDifficultyOptions()}
         <button class="primary-button count-confirm" type="button" data-action="confirm-player-count">${draftPlayerCount}人で進む</button>
         <button class="text-button back-title" type="button" data-action="back-to-title">モード選択へ戻る</button>
@@ -2011,7 +2126,18 @@ function renderPlayerCountScreen(): string {
   `;
 }
 
-function renderCpuDifficultyOptions(): string {
+function renderPlayerCountOptions(minimumPlayerCount = 3): string {
+  return `
+    <div class="count-options" role="group" aria-label="合計プレイ人数">
+      ${[3, 4, 5, 6].map((count) => {
+        const isDisabled = count < minimumPlayerCount;
+        return `<button class="count-option${draftPlayerCount === count ? " selected" : ""}" type="button" data-player-count="${count}" aria-pressed="${draftPlayerCount === count}" ${isDisabled ? "disabled title=\"現在の参加者を収容できない人数です\"" : ""}><strong>${count}</strong><span>人</span></button>`;
+      }).join("")}
+    </div>
+  `;
+}
+
+function renderCpuDifficultyOptions(title = "CPUの強さ"): string {
   const options: Array<{ id: CpuDifficulty; label: string; detail: string }> = [
     { id: "easy", label: "弱い", detail: "ゆっくり・ミス多め" },
     { id: "normal", label: "ふつう", detail: "標準的な判断" },
@@ -2019,9 +2145,9 @@ function renderCpuDifficultyOptions(): string {
   ];
   return `
     <section class="difficulty-section" aria-labelledby="difficulty-title">
-      <h2 id="difficulty-title">CPUの強さ</h2>
+      <h2 id="difficulty-title">${title}</h2>
       <div class="difficulty-options" role="group" aria-label="CPUの強さ">
-        ${options.map((option) => `<button class="difficulty-option${cpuDifficulty === option.id ? " selected" : ""}" type="button" data-cpu-difficulty="${option.id}"><strong>${option.label}</strong><small>${option.detail}</small></button>`).join("")}
+        ${options.map((option) => `<button class="difficulty-option${cpuDifficulty === option.id ? " selected" : ""}" type="button" data-cpu-difficulty="${option.id}" aria-pressed="${cpuDifficulty === option.id}"><strong>${option.label}</strong><small>${option.detail}</small></button>`).join("")}
       </div>
     </section>
   `;
@@ -2059,6 +2185,9 @@ function renderStartScreen(): string {
 function renderOnlineLobby(): string {
   const isHost = onlineRole === "host";
   const isGuest = onlineRole === "guest";
+  const humanCount = onlineLobbyMembers.length;
+  const cpuCount = getOnlineCpuCount();
+  const canStart = isHost && humanCount >= 2;
   return `
     <main class="start-screen">
       <section class="start-card online-lobby" aria-labelledby="online-title">
@@ -2069,28 +2198,40 @@ function renderOnlineLobby(): string {
             ? `
               <p class="room-label">参加コード</p>
               <div class="room-code" aria-label="参加コード ${roomCode}">${roomCode || "------"}</div>
+              <section class="online-room-settings" aria-labelledby="host-settings-title">
+                <div class="online-settings-heading">
+                  <h2 id="host-settings-title">ホスト設定</h2>
+                  <span>部屋を作った人だけ変更できます</span>
+                </div>
+                <fieldset class="online-setting-group">
+                  <legend>合計プレイ人数</legend>
+                  <p>友達が参加していない空き枠にはCPUが入ります。</p>
+                  ${renderPlayerCountOptions(getMinimumOnlinePlayerCount())}
+                </fieldset>
+                ${renderCpuDifficultyOptions("残りのCPUの強さ")}
+                <p class="online-cpu-note">人間 ${humanCount}人 ＋ CPU ${cpuCount}人 ＝ 合計 ${draftPlayerCount}人</p>
+              </section>
               ${renderOnlineParticipants()}
-              <p class="online-status" role="status">${onlineStatus}</p>
-              <button class="primary-button lobby-action" type="button" data-action="start-online-game" ${onlineHumanPlayerIds.size < 2 ? "disabled" : ""}>ゲームを開始</button>
+              <p class="online-status" role="status" aria-live="polite">${onlineStatus}</p>
+              <button class="primary-button lobby-action" type="button" data-action="start-online-game" ${canStart ? "" : "disabled"}>${canStart ? `${draftPlayerCount}人でゲームを開始` : "友達の参加を待っています"}</button>
+              ${canStart ? "" : `<p class="lobby-hint">友達が1人以上参加すると、残りの席をCPUで埋めて開始できます。</p>`}
             `
             : isGuest
-              ? `<div class="waiting-spinner" aria-hidden="true"></div>${renderOnlineParticipants()}<p class="online-status" role="status">${onlineStatus}</p>`
-              : `
-                <p class="start-lead">1人が部屋を作り、表示された6文字のコードを友達に送ります。</p>
-                <div class="lobby-actions">
-                  <div class="create-box">
-                    <label for="player-name-input">表示名（部屋作成・参加共通）</label>
-                    <input id="player-name-input" name="playerName" value="${draftPlayerName}" maxlength="12" autocomplete="nickname" placeholder="あなたの名前">
-                    <button class="primary-button lobby-action" type="button" data-action="create-room">部屋を作る</button>
-                  </div>
-                  <div class="join-box">
-                    <label for="room-code-input">参加コード</label>
-                    <input id="room-code-input" name="roomCode" value="${draftRoomCode}" maxlength="6" autocomplete="off" placeholder="ABC234">
-                    <button class="secondary-button" type="button" data-action="join-room">部屋に参加</button>
-                  </div>
-                </div>
-                <p class="online-status" role="status">${onlineStatus}</p>
-              `
+              ? onlineJoinRejected
+                ? `
+                  <div class="online-error-mark" aria-hidden="true">!</div>
+                  <p class="start-lead">このコードでは参加できませんでした。</p>
+                  <p class="online-status" role="status" aria-live="polite">${onlineStatus}</p>
+                  <button class="secondary-button lobby-action" type="button" data-action="retry-online-join">参加コードを入力し直す</button>
+                `
+                : `
+                  <div class="waiting-spinner" aria-hidden="true"></div>
+                  <p class="start-lead">ホストがゲームを開始するまで、この画面でお待ちください。</p>
+                  ${onlineLobbyMembers.length > 0 ? renderOnlineRoomSummary() : ""}
+                  ${renderOnlineParticipants()}
+                  <p class="online-status" role="status" aria-live="polite">${onlineStatus}</p>
+                `
+              : renderOnlineEntry()
         }
         <button class="text-button back-title" type="button" data-action="back-to-title">タイトルへ戻る</button>
       </section>
@@ -2098,16 +2239,91 @@ function renderOnlineLobby(): string {
   `;
 }
 
+function renderOnlineEntry(): string {
+  if (onlineLobbyView === "choice") {
+    return `
+      <p class="start-lead">オンライン対戦の始め方を選んでください。</p>
+      <div class="online-entry-options" aria-label="部屋を作るか参加するかを選択">
+        <button class="online-entry-card is-create" type="button" data-action="choose-create-room">
+          <span class="online-entry-icon" aria-hidden="true">作</span>
+          <strong>部屋を作る</strong>
+          <small>人数と、空き枠に入るCPUの強さを決める</small>
+        </button>
+        <button class="online-entry-card is-join" type="button" data-action="choose-join-room">
+          <span class="online-entry-icon" aria-hidden="true">入</span>
+          <strong>部屋に参加する</strong>
+          <small>友達から届いた6文字のコードで参加する</small>
+        </button>
+      </div>
+      <p class="online-status" role="status" aria-live="polite">${onlineStatus}</p>
+    `;
+  }
+
+  if (onlineLobbyView === "join") {
+    return `
+      <section class="online-setup-panel" aria-labelledby="join-room-title">
+        <h2 id="join-room-title">部屋に参加する</h2>
+        <p class="online-setup-copy">表示名と、友達から届いた参加コードを入力してください。</p>
+        <div class="online-form">
+          <label for="join-player-name-input">あなたの表示名</label>
+          <input id="join-player-name-input" name="playerName" value="${escapeHtml(draftPlayerName)}" maxlength="12" autocomplete="nickname" placeholder="あなたの名前">
+          <label for="room-code-input">6文字の参加コード</label>
+          <input class="room-code-input" id="room-code-input" name="roomCode" value="${draftRoomCode}" maxlength="6" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABC234">
+          <button class="primary-button lobby-action" type="button" data-action="join-room">この部屋に参加する</button>
+        </div>
+        <p class="online-status" role="status" aria-live="polite">${onlineStatus}</p>
+        <button class="text-button" type="button" data-action="back-online-choice">選択に戻る</button>
+      </section>
+    `;
+  }
+
+  return `
+    <section class="online-setup-panel" aria-labelledby="create-room-title">
+      <h2 id="create-room-title">部屋を作る</h2>
+      <p class="online-setup-copy">あなたがホストです。全体の人数と、友達が入らなかった席のCPUレベルを設定します。</p>
+      <div class="online-form online-host-name">
+        <label for="host-player-name-input">あなたの表示名</label>
+        <input id="host-player-name-input" name="playerName" value="${escapeHtml(draftPlayerName)}" maxlength="12" autocomplete="nickname" placeholder="あなたの名前">
+      </div>
+      <fieldset class="online-setting-group">
+        <legend>合計プレイ人数</legend>
+        <p>ホスト・参加する友達・CPUを合わせた人数です。</p>
+        ${renderPlayerCountOptions()}
+      </fieldset>
+      ${renderCpuDifficultyOptions("残りのCPUの強さ")}
+      <p class="online-cpu-note">友達が1人以上参加すると開始できます。合計${draftPlayerCount}人になるように、残りの空き席へCPUが入ります。</p>
+      <button class="primary-button lobby-action" type="button" data-action="create-room">この設定で部屋を作る</button>
+      <p class="online-status" role="status" aria-live="polite">${onlineStatus}</p>
+      <button class="text-button" type="button" data-action="back-online-choice">選択に戻る</button>
+    </section>
+  `;
+}
+
+function renderOnlineRoomSummary(): string {
+  const humanCount = onlineLobbyMembers.length;
+  const cpuCount = getOnlineCpuCount();
+  return `
+    <div class="online-room-summary" aria-label="現在の部屋設定">
+      <span><strong>${draftPlayerCount}</strong><small>合計人数</small></span>
+      <span><strong>${humanCount}</strong><small>人間</small></span>
+      <span><strong>${cpuCount}</strong><small>CPU</small></span>
+      <span><strong>${getCpuDifficultyLabel()}</strong><small>CPUレベル</small></span>
+    </div>
+  `;
+}
+
 function renderOnlineParticipants(): string {
   if (onlineLobbyMembers.length === 0) return "";
+  const cpuCount = getOnlineCpuCount();
   return `
     <section class="participant-panel" aria-label="参加者一覧">
       <div class="participant-summary">
-        <strong>参加者 ${onlineLobbyMembers.length}/${draftPlayerCount}人</strong>
-        <span>最初の親：${onlineLobbyMembers[0]?.name ?? "未定"}</span>
+        <strong>人間の参加者 ${onlineLobbyMembers.length}人</strong>
+        <span>空き枠のCPU ${cpuCount}人</span>
       </div>
       <ul class="participant-list">
-        ${onlineLobbyMembers.map((member, index) => `<li><span>${member.name}</span>${index === 0 ? "<strong>最初の親</strong>" : member.isHost ? "<small>ホスト</small>" : "<small>参加</small>"}</li>`).join("")}
+        ${onlineLobbyMembers.map((member) => `<li><span>${escapeHtml(member.name)}</span>${member.isHost ? "<strong>ホスト・最初の親</strong>" : "<small>友達</small>"}</li>`).join("")}
+        ${cpuCount > 0 ? `<li class="cpu-participant"><span>CPU × ${cpuCount}人</span><small>レベル：${getCpuDifficultyLabel()}</small></li>` : ""}
       </ul>
     </section>
   `;
@@ -2136,7 +2352,7 @@ function renderRulesSummary(): string {
           <li>山札と公開札はトライ間で引き継ぎ、親交代時に補給します。</li>
           <li>魚を出すと直前から逆順に比べ、大きい魚が小さい魚を食べます。先に大きい魚がいた場合は、後から出した小さい魚が食べられます。</li>
           <li>同じ数字では捕食が止まります。食べられた魚が抱えていた魚も、まとめて大きい魚へ引き継がれます。</li>
-          <li>口の中ではカードの代わりに魚が泳ぎ、小さい魚だけの時はカメラが寄り、大きい魚が出るほどズームアウトします。</li>
+          <li>口の中は固定画面で、数字が小さい魚ほど小さく、大きい魚ほど大きく表示されます。</li>
           <li>魚は数字に関係なく出せます。</li>
           <li>口が開いている間、同じ2同士または3同士をドラッグして重ねると群れになります。2の群れは強さ4、3の群れは強さ6です。</li>
           <li>群れを作って空いた公開枠には、山札があれば即座に1枚補充します。群れは1枚の魚として出し、再び重ねたり分けたりはできません。</li>
