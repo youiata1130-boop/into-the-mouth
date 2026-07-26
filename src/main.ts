@@ -1273,12 +1273,58 @@ function getPlayer(playerId: string): Player {
   return player;
 }
 
-function getWinnerText(): string {
+function getPlayerToneNumber(playerId: string): number {
+  const numberedId = /^player-(\d+)$/.exec(playerId);
+  if (numberedId) return ((Number(numberedId[1]) - 1) % 6) + 1;
+
+  const hash = [...playerId].reduce((total, character) => total + character.charCodeAt(0), 0);
+  return (hash % 6) + 1;
+}
+
+function getPlayerToneClass(playerId: string): string {
+  return `player-tone player-tone-${getPlayerToneNumber(playerId)}`;
+}
+
+function renderPlayerIdentity(player: Player): string {
+  const toneNumber = getPlayerToneNumber(player.id);
+
+  return `
+    <span class="player-identity">
+      <span class="player-color-key" aria-label="プレイヤー${toneNumber}のカラー">P${toneNumber}</span>
+      <span class="player-identity-name">${player.name}</span>
+    </span>
+  `;
+}
+
+function getWinningPlayers(): Player[] {
   const highestScore = Math.max(...players.map((player) => player.score));
-  return players
-    .filter((player) => player.score === highestScore)
+  return players.filter((player) => player.score === highestScore);
+}
+
+function getWinnerText(): string {
+  return getWinningPlayers()
     .map((player) => `${player.name} ${player.score}点`)
     .join(" / ");
+}
+
+function renderWinnerNotice(): string {
+  return `
+    <div class="winner-notice" role="status">
+      <span class="winner-label">勝者</span>
+      <div class="winner-list">
+        ${getWinningPlayers()
+          .map(
+            (player) => `
+              <span class="winner-chip ${getPlayerToneClass(player.id)}">
+                ${renderPlayerIdentity(player)}
+                <strong>${player.score}点</strong>
+              </span>
+            `
+          )
+          .join("")}
+      </div>
+    </div>
+  `;
 }
 
 function addLog(message: string): void {
@@ -1806,11 +1852,11 @@ function render(): void {
         </section>
 
         <section class="center-stage${isHumanParent() ? "" : " no-parent-controls"}"${isTryEnded ? " inert" : ""}>
-          <section class="mouth-panel" aria-label="大きな魚の口">
+          <section class="mouth-panel ${getPlayerToneClass(getParent().id)}" aria-label="大きな魚の口">
             <div class="mouth-title-row">
               <div>
                 <p class="section-label">親</p>
-                <h2>${getParent().name}</h2>
+                <h2>${renderPlayerIdentity(getParent())}</h2>
               </div>
               <span class="mouth-state ${biteAftermath ? "is-after-bite" : isMouthOpen ? "is-open" : "is-closed"}">
                 ${biteAftermath ? "MUNCH!" : isMouthOpen ? "OPEN" : "CLOSED"}
@@ -2075,14 +2121,16 @@ function renderRulesSummary(): string {
 }
 
 function renderHumanParentSeat(): string {
+  const parent = getParent();
+
   return `
-    <article class="child-panel is-self human-parent-seat">
+    <article class="child-panel is-self human-parent-seat ${getPlayerToneClass(parent.id)}">
       <header class="child-header">
         <div>
           <p class="section-label">あなたの番</p>
-          <h3>${getParent().name}</h3>
+          <h3>${renderPlayerIdentity(parent)}</h3>
         </div>
-        <strong>${getParent().score}点</strong>
+        <strong>${parent.score}点</strong>
       </header>
       <p class="notice">あなたは親です。中央の口を操作してください。</p>
     </article>
@@ -2119,9 +2167,9 @@ function renderParentControls(showRoundActions = true): string {
   const parent = getParent();
 
   return `
-    <section class="panel-block parent-controls">
+    <section class="panel-block parent-controls ${getPlayerToneClass(parent.id)}">
       <p class="section-label">${parentIsHuman ? "あなたが親" : "NPC親"}</p>
-      <h2>${parent.name}</h2>
+      <h2>${renderPlayerIdentity(parent)}</h2>
       <div class="parent-actions">
         <button class="primary-button" type="button" data-action="open-mouth"${canOpen ? "" : " disabled"}>
           口を開ける
@@ -2498,7 +2546,7 @@ function sumTryReplayValues(
 function renderTryReplayCard(card: BoxCard): string {
   if (card.type === "escape") {
     return `
-      <div class="try-replay-fish is-escape-effect" aria-label="${card.ownerName}の逃げる">
+      <div class="try-replay-fish is-escape-effect ${getPlayerToneClass(card.ownerId)}" aria-label="${card.ownerName}の逃げる">
         <span aria-hidden="true">≋</span>
         <strong>逃げる</strong>
       </div>
@@ -2512,7 +2560,7 @@ function renderTryReplayCard(card: BoxCard): string {
       : `value-${card.value}${card.schoolSize === 2 ? " is-school" : ""}`;
 
   return `
-    <div class="try-replay-fish ${typeClass}" aria-label="${getMouthFishActorLabel(card)}">
+    <div class="try-replay-fish ${typeClass} ${getPlayerToneClass(card.ownerId)}" aria-label="${getMouthFishActorLabel(card)}">
       ${renderMouthFishVisual(card)}
     </div>
   `;
@@ -2584,8 +2632,21 @@ function getTryReplayScoreSummary(): string {
     .map((player) => ({ player, gained: getTryScoreGain(player) }))
     .filter(({ gained }) => gained > 0);
 
-  if (gains.length === 0) return "今回は得点なし";
-  return gains.map(({ player, gained }) => `${player.name} +${gained}点`).join(" ／ ");
+  if (gains.length === 0) return '<span class="try-replay-no-score">今回は得点なし</span>';
+  return `
+    <span class="try-replay-score-chips">
+      ${gains
+        .map(
+          ({ player, gained }) => `
+            <span class="try-replay-score-chip ${getPlayerToneClass(player.id)}">
+              <span>P${getPlayerToneNumber(player.id)} ${player.name}</span>
+              <b>+${gained}点</b>
+            </span>
+          `
+        )
+        .join("")}
+    </span>
+  `;
 }
 
 function renderTryResultOverlay(): string {
@@ -2595,9 +2656,9 @@ function renderTryResultOverlay(): string {
         <p class="section-label">1回終了</p>
         <h2 id="try-result-title">${isGameOver ? "ゲーム終了" : "この回の結果"}</h2>
       </div>
-      ${isGameOver ? `<p class="notice is-hot">勝者: ${getWinnerText()}</p>` : ""}
+      ${isGameOver ? renderWinnerNotice() : ""}
       <div class="try-result-grid">
-        <section>
+        <section class="try-score-section">
           <p class="section-label">獲得点</p>
           <div class="try-score-list">
             ${players
@@ -2606,10 +2667,20 @@ function renderTryResultOverlay(): string {
                   const gained = getTryScoreGain(player);
 
                   return `
-                    <div class="try-score-row ${player.role} ${gained > 0 ? "scored" : ""}">
-                      <span>${player.name}<small>${player.role === "parent" ? "親" : "子"}</small></span>
-                      <strong>+${gained}点</strong>
-                      <em>合計 ${player.score}点</em>
+                    <div
+                      class="try-score-row ${player.role} ${gained > 0 ? "scored" : ""} ${getPlayerToneClass(player.id)}"
+                      aria-label="${player.name}、今回の獲得 ${gained}点、合計 ${player.score}点"
+                    >
+                      <div class="try-score-player">
+                        ${renderPlayerIdentity(player)}
+                        <small>${player.role === "parent" ? "親" : "子"}</small>
+                      </div>
+                      <div class="try-score-gain">
+                        <span>今回獲得</span>
+                        <strong>+${gained}</strong>
+                        <b>点</b>
+                      </div>
+                      <em>合計 <b>${player.score}点</b></em>
                     </div>
                   `;
                 }
@@ -2860,7 +2931,7 @@ function renderMouthFishActor(card: BoxCard): string {
 
   return `
     <article
-      class="mouth-fish-actor ${statusClass} ${card.type === "fish" ? `value-${card.value}` : ""} ${motionClass}"
+      class="mouth-fish-actor ${statusClass} ${card.type === "fish" ? `value-${card.value}` : ""} ${motionClass} ${getPlayerToneClass(card.ownerId)}"
       style="${style}"
       aria-label="${getMouthFishActorLabel(card)}"
     >
@@ -2957,7 +3028,7 @@ function renderBoxCard(card: BoxCard, concealed = false): string {
 
   if (card.type === "bait") {
     return `
-      <article${accessibility} class="box-card bait-card ${card.consumedById ? "is-eaten" : ""}">
+      <article${accessibility} class="box-card bait-card ${card.consumedById ? "is-eaten" : ""} ${getPlayerToneClass(card.ownerId)}">
         <span class="card-sequence">${card.sequence}</span>
         <span class="card-value">1</span>
         <span class="card-name">餌</span>
@@ -2970,7 +3041,7 @@ function renderBoxCard(card: BoxCard, concealed = false): string {
     const poisonLabel = getPoisonCardStatusLabel(card.status);
     const poisonAccessibility = concealed ? accessibility : ` aria-label="毒魚。${poisonLabel}"`;
     return `
-      <article${poisonAccessibility} class="box-card poison-card ${card.status === "active" ? "is-active" : "is-spent"} is-${card.status}">
+      <article${poisonAccessibility} class="box-card poison-card ${card.status === "active" ? "is-active" : "is-spent"} is-${card.status} ${getPlayerToneClass(card.ownerId)}">
         <span class="card-sequence">${card.sequence}</span>
         <img class="card-fish-art" src="./assets/cards/poison-fish.png" alt="" aria-hidden="true">
         <span class="card-symbol poison-symbol" aria-hidden="true">&#9760;</span>
@@ -2980,7 +3051,7 @@ function renderBoxCard(card: BoxCard, concealed = false): string {
 
   if (card.type === "escape") {
     return `
-      <article${accessibility} class="box-card escape-card ${card.successful ? "" : "is-ineffective"}">
+      <article${accessibility} class="box-card escape-card ${card.successful ? "" : "is-ineffective"} ${getPlayerToneClass(card.ownerId)}">
         <span class="card-sequence">${card.sequence}</span>
         <span class="card-value">逃</span>
         <span class="card-name">${card.ownerName}</span>
@@ -2991,7 +3062,7 @@ function renderBoxCard(card: BoxCard, concealed = false): string {
 
   const fishArtValue = card.schoolBaseValue ?? card.value;
   return `
-    <article${accessibility} class="box-card fish-card-in-box value-${card.value} ${card.schoolSize === 2 ? "is-school" : ""} ${card.consumedById ? "is-eaten" : ""} ${card.poisonScoredById ? "is-poison-scored" : ""} ${card.invalidatedByOwnPoison ? "is-ineffective" : ""} ${card.escaped ? "is-escaped" : ""}">
+    <article${accessibility} class="box-card fish-card-in-box value-${card.value} ${card.schoolSize === 2 ? "is-school" : ""} ${card.consumedById ? "is-eaten" : ""} ${card.poisonScoredById ? "is-poison-scored" : ""} ${card.invalidatedByOwnPoison ? "is-ineffective" : ""} ${card.escaped ? "is-escaped" : ""} ${getPlayerToneClass(card.ownerId)}">
       <span class="card-sequence">${card.sequence}</span>
       ${card.schoolSize === 2 ? '<span class="school-card-layer" aria-hidden="true"></span>' : ""}
       <img class="card-fish-art" src="${fishArtPaths[fishArtValue]}" alt="" aria-hidden="true">
@@ -3032,15 +3103,18 @@ function renderScoreboard(): string {
         ${players
           .map(
             (player) => `
-              <div class="score-row ${player.role}">
-                <span>${player.name}<small>${player.role === "parent" ? "親" : "子"}</small></span>
-                <strong>${player.score}</strong>
+              <div class="score-row ${player.role} ${getPlayerToneClass(player.id)}">
+                <div class="score-player">
+                  ${renderPlayerIdentity(player)}
+                  <small>${player.role === "parent" ? "親" : "子"}</small>
+                </div>
+                <strong>${player.score}<b>点</b></strong>
               </div>
             `
           )
           .join("")}
       </div>
-      ${isGameOver ? `<p class="notice is-hot">勝者: ${getWinnerText()}</p>` : ""}
+      ${isGameOver ? renderWinnerNotice() : ""}
     </section>
   `;
 }
@@ -3071,11 +3145,11 @@ function renderChildPanel(player: Player, index: number, variant: "opponent" | "
     : "有効な得点候補なし";
 
   return `
-    <article class="child-panel is-${variant}">
+    <article class="child-panel is-${variant} ${getPlayerToneClass(player.id)}">
       <header class="child-header">
         <div>
           <p class="section-label">${label}</p>
-          <h3>${player.name}</h3>
+          <h3>${renderPlayerIdentity(player)}</h3>
         </div>
         <strong>${player.score}点</strong>
       </header>
