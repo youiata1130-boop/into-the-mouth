@@ -1,5 +1,5 @@
 import { FISH_COUNTS } from "./config";
-import type { FishCard, FishValue, Player, PlayerCard, PoisonCard, SchoolFishValue } from "./model";
+import type { FishCard, FishValue, Player, PlayerCard, PoisonCard, SchoolFishValue, SchoolSize } from "./model";
 import { shuffle } from "./random";
 
 export function createShuffledDeck(createCardId: () => number): PlayerCard[] {
@@ -30,14 +30,15 @@ export function useFaceUpCard(player: Player, slotIndex: number): PlayerCard | n
 }
 
 export function canStackFishCards(source: PlayerCard | null, target: PlayerCard | null): source is FishCard {
-  return (
-    source?.type === "fish" &&
-    target?.type === "fish" &&
-    source.schoolSize === undefined &&
-    target.schoolSize === undefined &&
-    (source.value === 2 || source.value === 3) &&
-    source.value === target.value
-  );
+  if (source?.type !== "fish" || target?.type !== "fish") return false;
+
+  const sourceBaseValue = getSchoolBaseValue(source);
+  const targetBaseValue = getSchoolBaseValue(target);
+
+  if (sourceBaseValue === null || sourceBaseValue !== targetBaseValue) return false;
+
+  const schoolSize = getSchoolCardCount(source) + getSchoolCardCount(target);
+  return schoolSize >= 2 && schoolSize <= 3;
 }
 
 export function stackFaceUpFishCards(
@@ -56,19 +57,40 @@ export function stackFaceUpFishCards(
   if (expectedTargetCardId !== undefined && target?.id !== expectedTargetCardId) return null;
   if (!canStackFishCards(source, target) || target?.type !== "fish") return null;
 
-  const schoolBaseValue = target.value as SchoolFishValue;
-  const schoolValue = (schoolBaseValue * 2) as FishValue;
+  const schoolBaseValue = getSchoolBaseValue(target);
+  if (schoolBaseValue === null) return null;
+
+  const componentCardIds = [...getComponentCardIds(target), ...getComponentCardIds(source)];
+  if (componentCardIds.length !== 2 && componentCardIds.length !== 3) return null;
+
+  const schoolSize = componentCardIds.length as SchoolSize;
+  const schoolValue = (schoolBaseValue * schoolSize) as FishValue;
   const schoolCard: FishCard = {
     ...target,
     value: schoolValue,
     schoolBaseValue,
-    schoolSize: 2,
-    componentCardIds: [target.id, source.id]
+    schoolSize,
+    componentCardIds: schoolSize === 2
+      ? [componentCardIds[0], componentCardIds[1]]
+      : [componentCardIds[0], componentCardIds[1], componentCardIds[2]]
   };
 
   player.faceUp[targetSlotIndex] = schoolCard;
   player.faceUp[sourceSlotIndex] = drawCard(player);
   return schoolCard;
+}
+
+function getSchoolBaseValue(card: FishCard): SchoolFishValue | null {
+  if (card.schoolBaseValue !== undefined) return card.schoolBaseValue;
+  return card.value === 2 || card.value === 3 ? card.value : null;
+}
+
+function getSchoolCardCount(card: FishCard): number {
+  return card.schoolSize ?? 1;
+}
+
+function getComponentCardIds(card: FishCard): number[] {
+  return card.componentCardIds ? [...card.componentCardIds] : [card.id];
 }
 
 function createFishCard(id: number, value: FishCard["value"]): FishCard {

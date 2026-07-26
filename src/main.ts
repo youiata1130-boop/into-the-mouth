@@ -67,6 +67,12 @@ type CpuDifficulty = "easy" | "normal" | "hard";
 type NpcChildAction =
   | { type: "play" | "escape"; slotIndex: number }
   | { type: "stack"; sourceSlotIndex: number; targetSlotIndex: number };
+type StackCardIdentity = {
+  playerId: string;
+  slotIndex: number;
+  cardId: number;
+  stackValue: "2" | "3";
+};
 type StackDragState = {
   pointerId: number;
   playerId: string;
@@ -111,7 +117,8 @@ const fishArtPaths: Record<FishValue, string> = {
   3: "./assets/cards/value-3-fish.png",
   4: "./assets/cards/value-4-octopus.png",
   5: "./assets/cards/value-5-shark.png",
-  6: "./assets/cards/value-5-shark.png"
+  6: "./assets/cards/value-5-shark.png",
+  9: "./assets/cards/value-3-fish.png"
 };
 
 let hasStarted = false;
@@ -354,7 +361,8 @@ appRoot.addEventListener("keydown", (event) => {
         !button.disabled &&
         identity.playerId === sourceIdentity.playerId &&
         identity.slotIndex !== sourceIdentity.slotIndex &&
-        identity.stackValue === sourceIdentity.stackValue
+        identity.stackValue === sourceIdentity.stackValue &&
+        canStackCardIdentities(sourceIdentity, identity)
       );
     });
 
@@ -411,12 +419,7 @@ function getCardActionTarget(button: HTMLButtonElement): { playerId: string; slo
   return playerId && Number.isInteger(slotIndex) ? { playerId, slotIndex } : null;
 }
 
-function getStackCardIdentity(button: HTMLButtonElement): {
-  playerId: string;
-  slotIndex: number;
-  cardId: number;
-  stackValue: "2" | "3";
-} | null {
+function getStackCardIdentity(button: HTMLButtonElement): StackCardIdentity | null {
   const playerId = button.dataset.playerId;
   const slotIndex = Number(button.dataset.slotIndex);
   const cardId = Number(button.dataset.cardId);
@@ -435,7 +438,25 @@ function getStackDropTarget(clientX: number, clientY: number, drag: StackDragSta
   if (!button || !identity || button.disabled) return null;
   if (identity.playerId !== drag.playerId || identity.slotIndex === drag.sourceSlotIndex) return null;
   if (identity.stackValue !== drag.stackValue) return null;
+  const sourceIdentity: StackCardIdentity = {
+    playerId: drag.playerId,
+    slotIndex: drag.sourceSlotIndex,
+    cardId: drag.sourceCardId,
+    stackValue: drag.stackValue
+  };
+  if (!canStackCardIdentities(sourceIdentity, identity)) return null;
   return button;
+}
+
+function canStackCardIdentities(source: StackCardIdentity, target: StackCardIdentity): boolean {
+  if (source.playerId !== target.playerId || source.slotIndex === target.slotIndex) return false;
+  if (source.stackValue !== target.stackValue) return false;
+
+  const player = getPlayer(source.playerId);
+  const sourceCard = player.faceUp[source.slotIndex] ?? null;
+  const targetCard = player.faceUp[target.slotIndex] ?? null;
+  if (sourceCard?.id !== source.cardId || targetCard?.id !== target.cardId) return false;
+  return canStackFishCards(sourceCard, targetCard);
 }
 
 function setStackDropTarget(button: HTMLButtonElement | null): void {
@@ -515,11 +536,11 @@ function stackCardsIntoSchool(
     expectedTargetCardId
   );
 
-  if (!school?.schoolBaseValue) return;
+  if (!school?.schoolBaseValue || !school.schoolSize) return;
   const refillText = player.faceUp[sourceSlotIndex]
     ? "空いた場所には山札から1枚補充しました。"
     : "山札がないため、空いた場所はそのままです。";
-  addLog(`${player.name} が ${school.schoolBaseValue} を2枚重ね、強さ ${school.value} の群れを作りました。${refillText}`);
+  addLog(`${player.name} が ${school.schoolBaseValue} を合計${school.schoolSize}枚重ね、${school.schoolSize}匹・強さ${school.value}の群れを作りました。${refillText}`);
   render();
 }
 
@@ -1197,8 +1218,8 @@ function getFishCardLabel(card: FishCard | FishBoxCard): string {
     : `魚「${card.value}」`;
 }
 
-function getSchoolVisualFishCount(card: Pick<FishCard, "schoolBaseValue">): number {
-  return card.schoolBaseValue ?? 1;
+function getSchoolVisualFishCount(card: Pick<FishCard, "schoolSize">): number {
+  return card.schoolSize ?? 1;
 }
 
 function getLiveMouthFishCount(): number {
@@ -1590,8 +1611,8 @@ function chooseNpcChildAction(player: Player): NpcChildAction | null {
   const escapeSlot = getNpcEscapeSlot(player);
 
   if (candidate && escapeSlot !== null) {
-    const shouldSecureSix = candidate.value === 6 && candidateTotal > 0;
-    const escapeChance = shouldSecureSix ? 0.94 : candidateTotal >= 6 ? 0.82 : candidateTotal >= 3 ? 0.58 : 0.28;
+    const shouldSecureLargeSchool = candidate.value >= 6 && candidateTotal > 0;
+    const escapeChance = shouldSecureLargeSchool ? 0.94 : candidateTotal >= 6 ? 0.82 : candidateTotal >= 3 ? 0.58 : 0.28;
 
     const difficultyMultiplier = cpuDifficulty === "easy" ? 0.62 : cpuDifficulty === "hard" ? 1.15 : 1;
     if (Math.random() < Math.min(0.98, escapeChance * difficultyMultiplier)) {
@@ -1656,7 +1677,12 @@ function getNpcStackPair(player: Player): { sourceSlotIndex: number; targetSlotI
   for (const value of [3, 2] as const) {
     const matchingSlots = player.faceUp
       .map((card, slotIndex) => ({ card, slotIndex }))
-      .filter(({ card }) => card?.type === "fish" && card.value === value && card.schoolSize === undefined);
+      .filter((item): item is { card: FishCard; slotIndex: number } =>
+        item.card?.type === "fish" &&
+        (item.card.schoolBaseValue ?? item.card.value) === value &&
+        (item.card.schoolSize === undefined || item.card.schoolSize === 2)
+      )
+      .sort((left, right) => (right.card.schoolSize ?? 1) - (left.card.schoolSize ?? 1));
 
     for (let sourceIndex = 0; sourceIndex < matchingSlots.length; sourceIndex += 1) {
       for (let targetIndex = sourceIndex + 1; targetIndex < matchingSlots.length; targetIndex += 1) {
@@ -2315,8 +2341,9 @@ function renderRulesSummary(): string {
           <li>同じ数字では捕食が止まります。食べられた魚が抱えていた魚も、まとめて大きい魚へ引き継がれます。</li>
           <li>口の中は固定画面で、数字が小さい魚ほど小さく、大きい魚ほど大きく表示されます。</li>
           <li>魚は数字に関係なく出せます。</li>
-          <li>口が開いている間、同じ2同士または3同士をドラッグして重ねると群れになります。2の群れは2匹で強さ4、3の群れは3匹で強さ6として泳ぎます。</li>
-          <li>群れを作って空いた公開枠には、山札があれば即座に1枚補充します。群れは1枚の魚として出し、再び重ねたり分けたりはできません。</li>
+          <li>口が開いている間、同じ2同士または3同士を2枚重ねると、2匹の群れになります。強さはカードの合計です。</li>
+          <li>2匹の群れには、さらに同じ種類を1枚追加でき、3匹の群れになります。強さは2の群れなら6、3の群れなら9です。完成した群れは1枚の魚として出し、分けることはできません。</li>
+          <li>群れを作って空いた公開枠には、山札があれば即座に1枚補充します。</li>
           <li>得点時は、得点する人自身が出したカードを除き、食べた数字カードを得点します。</li>
           <li>逃げ成功時は、逃げる魚自身と同じ子が以前に出した魚を除いて得点します。</li>
           <li>最初の餌「1」は親自身のカードです。ほかに魚がいないまま親が閉じても0点です。</li>
@@ -2776,7 +2803,7 @@ function renderTryReplayCard(card: BoxCard): string {
     ? "is-bait"
     : card.type === "poison"
       ? "is-poison"
-      : `value-${card.value} size-value-${card.schoolBaseValue ?? card.value} art-value-${card.schoolBaseValue ?? card.value}${card.schoolSize === 2 ? " is-school" : ""}`;
+      : `value-${card.value} size-value-${card.schoolBaseValue ?? card.value} art-value-${card.schoolBaseValue ?? card.value}${card.schoolSize !== undefined ? " is-school" : ""}`;
 
   return `
     <div class="try-replay-fish ${typeClass} ${getPlayerToneClass(card.ownerId)}" aria-label="${getMouthFishActorLabel(card)}">
@@ -3125,7 +3152,7 @@ function renderMouthFishActor(card: BoxCard): string {
     ? [
         card.invalidatedByOwnPoison ? "is-ineffective" : "",
         card.poisonScoredById ? "is-poison-scored" : "",
-        card.schoolSize === 2 ? "is-school" : ""
+        card.schoolSize !== undefined ? "is-school" : ""
       ].filter(Boolean).join(" ")
     : card.type === "poison"
       ? "is-poison"
@@ -3241,9 +3268,9 @@ function getMouthFishMotionAnnouncement(): string {
   return entering ? `${getMouthFishActorLabel(entering)}が泳いできました。` : "";
 }
 
-function renderCardFishArtwork(artValue: FishValue, schoolBaseValue?: FishCard["schoolBaseValue"]): string {
+function renderCardFishArtwork(artValue: FishValue, schoolSize?: FishCard["schoolSize"]): string {
   const artPath = fishArtPaths[artValue];
-  const fishCount = schoolBaseValue ?? 1;
+  const fishCount = schoolSize ?? 1;
 
   if (fishCount === 1) {
     return `<img class="card-fish-art" src="${artPath}" alt="" aria-hidden="true">`;
@@ -3295,10 +3322,10 @@ function renderBoxCard(card: BoxCard, concealed = false): string {
 
   const fishArtValue = card.schoolBaseValue ?? card.value;
   return `
-    <article${accessibility} class="box-card fish-card-in-box value-${card.value} ${card.schoolSize === 2 ? "is-school" : ""} ${card.consumedById ? "is-eaten" : ""} ${card.poisonScoredById ? "is-poison-scored" : ""} ${card.invalidatedByOwnPoison ? "is-ineffective" : ""} ${card.escaped ? "is-escaped" : ""} ${getPlayerToneClass(card.ownerId)}">
+    <article${accessibility} class="box-card fish-card-in-box value-${card.value} ${card.schoolSize !== undefined ? "is-school" : ""} ${card.consumedById ? "is-eaten" : ""} ${card.poisonScoredById ? "is-poison-scored" : ""} ${card.invalidatedByOwnPoison ? "is-ineffective" : ""} ${card.escaped ? "is-escaped" : ""} ${getPlayerToneClass(card.ownerId)}">
       <span class="card-sequence">${card.sequence}</span>
-      ${card.schoolSize === 2 ? '<span class="school-card-layer" aria-hidden="true"></span>' : ""}
-      ${renderCardFishArtwork(fishArtValue, card.schoolBaseValue)}
+      ${card.schoolSize !== undefined ? '<span class="school-card-layer" aria-hidden="true"></span>' : ""}
+      ${renderCardFishArtwork(fishArtValue, card.schoolSize)}
       <span class="card-value">${card.value}</span>
       ${card.schoolBaseValue ? `<span class="school-fish-count-badge" aria-hidden="true">${getSchoolVisualFishCount(card)}匹</span>` : ""}
     </article>
@@ -3397,7 +3424,7 @@ function renderChildPanel(player: Player, index: number, variant: "opponent" | "
             <div class="child-meta">
               <span>${candidateText}</span>
               <span>山札 ${player.drawPile.length} / 使用済み ${getUsedPhysicalCardCount(player)}</span>
-              <span>同じ2または3をドラッグで重ねると群れになります</span>
+              <span>同じ2・3を重ねて群れに。2匹の群れには同じ種類をもう1枚追加できます</span>
             </div>
           `
           : `<p class="microcopy">${candidateText}</p>`
@@ -3430,18 +3457,24 @@ function renderHandSlot(player: Player, card: PlayerCard | null, slotIndex: numb
       : card.type === "poison"
         ? "毒魚を出す"
         : `${fishLabel}を出す`;
-  const isSchool = card.type === "fish" && card.schoolSize === 2;
+  const isSchool = card.type === "fish" && card.schoolSize !== undefined;
+  const stackBaseValue = card.type === "fish"
+    ? card.schoolBaseValue ?? (card.value === 2 || card.value === 3 ? card.value : null)
+    : null;
   const canStack =
     canUse &&
     card.type === "fish" &&
-    card.schoolSize === undefined &&
-    (card.value === 2 || card.value === 3);
+    stackBaseValue !== null &&
+    (card.schoolSize === undefined || card.schoolSize === 2);
+  const stackHint = card.type === "fish" && card.schoolSize === 2 && stackBaseValue !== null
+    ? `同じ${stackBaseValue}を追加すると、3匹・強さ${stackBaseValue * 3}の群れになります。`
+    : "同じ数字のカードへドラッグするか、Sキーで2匹の群れにできます。";
   const cardClass = card.type === "poison"
     ? "poison-hand-card"
     : `fish-hand-card value-${card.value}${isSchool ? " is-school" : ""}`;
   const valueLabel = card.type === "poison" ? "" : String(card.value);
   const cardArtwork = card.type === "fish"
-    ? renderCardFishArtwork(card.schoolBaseValue ?? card.value, card.schoolBaseValue)
+    ? renderCardFishArtwork(card.schoolBaseValue ?? card.value, card.schoolSize)
     : '<img class="card-fish-art" src="./assets/cards/poison-fish.png" alt="" aria-hidden="true">';
   const escapeCandidate = getPlayerCandidates(player.id).at(-1);
   const escapePoints = escapeCandidate ? sumCapturedIds(escapeCandidate.capturedIds, player.id) : 0;
@@ -3456,10 +3489,11 @@ function renderHandSlot(player: Player, card: PlayerCard | null, slotIndex: numb
         data-player-id="${player.id}"
         data-slot-index="${slotIndex}"
         data-card-id="${card.id}"
-        ${canStack ? `data-stack-value="${card.value}"` : ""}
+        aria-label="${playLabel}"
+        ${canStack ? `data-stack-value="${stackBaseValue}"` : ""}
         ${canStack ? 'aria-keyshortcuts="S"' : ""}
         ${canUse ? "" : " disabled"}
-        title="${canUse ? `${playLabel}${canStack ? "。同じ数字のカードへドラッグするか、Sキーで群れにできます。" : ""}` : unavailableTitle}"
+        title="${canUse ? `${playLabel}${canStack ? `。${stackHint}` : ""}` : unavailableTitle}"
       >
         ${isSchool ? '<span class="school-card-layer" aria-hidden="true"></span>' : ""}
         ${cardArtwork}
@@ -3483,7 +3517,7 @@ function renderHandSlot(player: Player, card: PlayerCard | null, slotIndex: numb
 
 function getUsedPhysicalCardCount(player: Player): number {
   return player.used.reduce(
-    (total, card) => total + (card.type === "fish" && card.schoolSize === 2 ? 2 : 1),
+    (total, card) => total + (card.type === "fish" ? card.schoolSize ?? 1 : 1),
     0
   );
 }

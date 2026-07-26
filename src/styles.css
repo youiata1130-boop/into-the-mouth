@@ -1034,6 +1034,10 @@ select {
   border-bottom-color: #4b7fbc;
 }
 
+.value-9 {
+  border-bottom-color: #6855a6;
+}
+
 .poison-card,
 .poison-hand-card {
   border-bottom: 8px solid var(--green);
@@ -3691,7 +3695,7 @@ body {
   animation: mouth-predator-chomp 660ms cubic-bezier(0.28, 0.8, 0.34, 1) 170ms both;
 }
 
-.mouth-fish-actor:is(.value-5, .value-6).is-predator .mouth-fish-body {
+.mouth-fish-actor:is(.value-5, .value-6, .value-9).is-predator .mouth-fish-body {
   animation-name: mouth-predator-chomp-safe;
 }
 

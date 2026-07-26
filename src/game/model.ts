@@ -1,5 +1,6 @@
-export type FishValue = 2 | 3 | 4 | 5 | 6;
+export type FishValue = 2 | 3 | 4 | 5 | 6 | 9;
 export type SchoolFishValue = 2 | 3;
+export type SchoolSize = 2 | 3;
 export type Role = "parent" | "child";
 
 export type FishCard = {
@@ -7,8 +8,8 @@ export type FishCard = {
   type: "fish";
   value: FishValue;
   schoolBaseValue?: SchoolFishValue;
-  schoolSize?: 2;
-  componentCardIds?: [number, number];
+  schoolSize?: SchoolSize;
+  componentCardIds?: [number, number] | [number, number, number];
 };
 
 export type PoisonCard = {
@@ -44,8 +45,8 @@ export type FishBoxCard = {
   type: "fish";
   value: FishValue;
   schoolBaseValue?: SchoolFishValue;
-  schoolSize?: 2;
-  componentCardIds?: [number, number];
+  schoolSize?: SchoolSize;
+  componentCardIds?: [number, number] | [number, number, number];
   ownerId: string;
   ownerName: string;
   sequence: number;
