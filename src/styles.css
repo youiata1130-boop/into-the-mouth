@@ -1732,6 +1732,11 @@ body {
   opacity: 1;
 }
 
+.child-panel.is-opponent.is-card-waiting button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
 .human-parent-seat {
   grid-template-columns: minmax(180px, 0.45fr) minmax(0, 1fr);
 }

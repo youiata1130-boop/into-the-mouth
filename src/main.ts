@@ -94,6 +94,7 @@ type OnlineGameState = {
   biteAftermath: BiteAftermath | null;
   isTryReplayActive: boolean;
   mouthFishMotion: MouthFishMotion | null;
+  cardPlayWaitingPlayerIds: string[];
   isGameOver: boolean;
   logEntries: string[];
   poisonDeadlineAt: number | null;
@@ -152,6 +153,8 @@ let isTryReplayActive = false;
 let tryReplayTimerId: number | null = null;
 let mouthFishMotion: MouthFishMotion | null = null;
 let mouthFishMotionTimerId: number | null = null;
+let cardPlayWaitingPlayerIds = new Set<string>();
+let cardPlayWaitTimerIds = new Map<string, number>();
 let isGameOver = false;
 let logEntries: string[] = [];
 let npcChildTimerId: number | null = null;
@@ -230,6 +233,10 @@ appRoot.addEventListener("click", (event) => {
       playerId: button.dataset.playerId,
       slotIndex: Number(button.dataset.slotIndex)
     });
+    if (action === "play-card" && button.dataset.playerId) {
+      startCardPlayWait(button.dataset.playerId, mouthFishMotionDurationMs);
+      render();
+    }
     return;
   }
 
@@ -481,7 +488,7 @@ function stackCardsIntoSchool(
   expectedSourceCardId?: number,
   expectedTargetCardId?: number
 ): void {
-  if (mouthFishMotion) return;
+  if (isPlayerWaitingAfterCardPlay(playerId)) return;
 
   const player = getPlayer(playerId);
   if (player.role !== "child" || !isMouthOpen || isTryEnded || isGameOver) return;
@@ -549,6 +556,7 @@ function returnToTitle(): void {
   clearBiteAftermath();
   clearTryReplay();
   clearMouthFishMotion();
+  clearCardPlayWaits();
   destroyOnlineSession();
   hasStarted = false;
   onlineLobbyOpen = false;
@@ -776,6 +784,7 @@ function destroyOnlineSession(): void {
   hostConnection?.close();
   guestConnections.forEach((connection) => connection.close());
   onlinePeer?.destroy();
+  clearCardPlayWaits();
   hostConnection = null;
   guestConnections = [];
   connectionPlayerIds.clear();
@@ -838,6 +847,7 @@ function resetTryBox(): void {
   clearBiteAftermath();
   clearTryReplay();
   clearMouthFishMotion();
+  clearCardPlayWaits();
   nextSequence = 1;
   boxCards = [createBaitBoxCard()];
   tryStartScores = Object.fromEntries(players.map((player) => [player.id, player.score]));
@@ -927,6 +937,7 @@ function finishTry(): void {
   clearNpcTimers();
   clearPoisonRemovalTimer();
   clearMouthFishMotion();
+  clearCardPlayWaits();
 
   if (activePoison) {
     markPoisonResolved(activePoison.boxId, "cancelled");
@@ -990,7 +1001,7 @@ function removeActivePoison(): void {
 }
 
 function playCard(playerId: string, slotIndex: number): void {
-  if (mouthFishMotion) return;
+  if (isPlayerWaitingAfterCardPlay(playerId)) return;
 
   const player = getPlayer(playerId);
   const card = player.faceUp[slotIndex];
@@ -1041,7 +1052,7 @@ function playFish(player: Player, slotIndex: number): void {
 
   if (activePoison?.ownerId === player.id) {
     fishBoxCard.invalidatedByOwnPoison = true;
-    startFishEntryMotion(fishBoxCard, liveBeforeIds, cameraFrom);
+    startFishEntryMotion(fishBoxCard, liveBeforeIds, cameraFrom, player.id);
     addLog(`${player.name} は自分の毒魚に続けて${getFishCardLabel(card)}を出したため、このカードは効果も得点価値も持ちません。`);
     render();
     return;
@@ -1056,14 +1067,14 @@ function playFish(player: Player, slotIndex: number): void {
     clearPoisonRemovalTimer();
     addLog(`${player.name} が${getFishCardLabel(card)}を出しました。${activePoison.ownerName} の毒魚が発動し、${activePoison.ownerName} が ${card.value} 点を確定しました。`);
     activePoison = null;
-    startFishEntryMotion(fishBoxCard, liveBeforeIds, cameraFrom);
+    startFishEntryMotion(fishBoxCard, liveBeforeIds, cameraFrom, player.id);
     render();
     return;
   }
 
   fishBoxCard.capturedIds = resolvePredation(fishBoxCard);
 
-  startFishEntryMotion(fishBoxCard, liveBeforeIds, cameraFrom);
+  startFishEntryMotion(fishBoxCard, liveBeforeIds, cameraFrom, player.id);
   const capturedTotal = sumCapturedIds(fishBoxCard.capturedIds, fishBoxCard.ownerId);
   const predator = fishBoxCard.consumedById ? getBoxCard(fishBoxCard.consumedById) : null;
   const detail = predator?.type === "fish"
@@ -1080,7 +1091,8 @@ function playFish(player: Player, slotIndex: number): void {
 function startFishEntryMotion(
   fish: FishBoxCard,
   liveBeforeIds: Set<number>,
-  cameraFrom: number
+  cameraFrom: number,
+  playerId: string
 ): void {
   const predatorId = fish.consumedById ?? (fish.capturedIds.length > 0 ? fish.boxId : null);
   const newlyConsumedIds = predatorId === null
@@ -1093,13 +1105,16 @@ function startFishEntryMotion(
     ? [fish.boxId, ...newlyConsumedIds]
     : newlyConsumedIds;
 
-  startMouthFishMotion({
-    enteringId: fish.boxId,
-    predatorId,
-    preyIds: [...new Set(preyIds)],
-    cameraFrom,
-    cameraTo: getMouthCameraZoom()
-  });
+  startMouthFishMotion(
+    {
+      enteringId: fish.boxId,
+      predatorId,
+      preyIds: [...new Set(preyIds)],
+      cameraFrom,
+      cameraTo: getMouthCameraZoom()
+    },
+    playerId
+  );
 }
 
 function getFishCardLabel(card: FishCard | FishBoxCard): string {
@@ -1136,13 +1151,16 @@ function playPoison(player: Player, slotIndex: number): void {
     ownerId: player.id,
     ownerName: player.name
   };
-  startMouthFishMotion({
-    enteringId: poisonBoxCard.boxId,
-    predatorId: null,
-    preyIds: [],
-    cameraFrom: cameraZoom,
-    cameraTo: cameraZoom
-  });
+  startMouthFishMotion(
+    {
+      enteringId: poisonBoxCard.boxId,
+      predatorId: null,
+      preyIds: [],
+      cameraFrom: cameraZoom,
+      cameraTo: cameraZoom
+    },
+    player.id
+  );
   startPoisonRemovalTimer();
   const takeoverText = previousPoison ? `${previousPoison.ownerName} から得点の権利を奪いました。` : "";
   addLog(`${player.name} が毒魚を入れました。${takeoverText}親は3秒以内に取り除く必要があります。`);
@@ -1150,7 +1168,7 @@ function playPoison(player: Player, slotIndex: number): void {
 }
 
 function escapeWithCard(playerId: string, slotIndex: number): void {
-  if (mouthFishMotion) return;
+  if (isPlayerWaitingAfterCardPlay(playerId)) return;
 
   const player = getPlayer(playerId);
 
@@ -1401,7 +1419,7 @@ function scheduleNpcAutomation(): void {
 
   if (gameMode === "online" && onlineRole !== "host") return;
 
-  if (isGameOver || isTryEnded || mouthFishMotion) return;
+  if (isGameOver || isTryEnded) return;
 
   if (!isMouthOpen) {
     npcParentCloseAt = null;
@@ -1417,7 +1435,7 @@ function scheduleNpcAutomation(): void {
     return;
   }
 
-  scheduleNpcParentAction();
+  if (!mouthFishMotion) scheduleNpcParentAction();
   scheduleNpcChildAction();
 }
 
@@ -1472,7 +1490,9 @@ function scheduleNpcParentAction(): void {
 }
 
 function scheduleNpcChildAction(): void {
-  const npcChildren = getNpcChildren().filter((player) => player.faceUp.some(Boolean));
+  const npcChildren = getNpcChildren().filter(
+    (player) => player.faceUp.some(Boolean) && !isPlayerWaitingAfterCardPlay(player.id)
+  );
 
   if (npcChildren.length === 0) return;
 
@@ -1671,17 +1691,22 @@ function clearBiteAftermath(): void {
   biteAftermath = null;
 }
 
-function startMouthFishMotion(motion: MouthFishMotion): void {
+function startMouthFishMotion(motion: MouthFishMotion, playerId: string): void {
   clearMouthFishMotion();
 
-  if (prefersReducedMotion() && gameMode !== "online") return;
+  const duration = mouthFishMotionDurationMs + Math.max(0, motion.preyIds.length - 1) * 70;
+  if (prefersReducedMotion() && gameMode !== "online") {
+    startCardPlayWait(playerId, duration);
+    return;
+  }
 
   mouthFishMotion = motion;
   mouthFishMotionTimerId = window.setTimeout(() => {
     mouthFishMotion = null;
     mouthFishMotionTimerId = null;
     render();
-  }, mouthFishMotionDurationMs + Math.max(0, motion.preyIds.length - 1) * 70);
+  }, duration);
+  startCardPlayWait(playerId, duration);
 }
 
 function clearMouthFishMotion(): void {
@@ -1691,6 +1716,46 @@ function clearMouthFishMotion(): void {
   }
 
   mouthFishMotion = null;
+}
+
+function isPlayerWaitingAfterCardPlay(playerId: string): boolean {
+  return cardPlayWaitingPlayerIds.has(playerId);
+}
+
+function startCardPlayWait(playerId: string, durationMs: number): void {
+  const existingTimerId = cardPlayWaitTimerIds.get(playerId);
+  if (existingTimerId !== undefined) window.clearTimeout(existingTimerId);
+
+  cardPlayWaitingPlayerIds.add(playerId);
+  const timerId = window.setTimeout(() => {
+    cardPlayWaitTimerIds.delete(playerId);
+    cardPlayWaitingPlayerIds.delete(playerId);
+    render();
+  }, durationMs);
+  cardPlayWaitTimerIds.set(playerId, timerId);
+}
+
+function clearCardPlayWaits(): void {
+  cardPlayWaitTimerIds.forEach((timerId) => window.clearTimeout(timerId));
+  cardPlayWaitTimerIds.clear();
+  cardPlayWaitingPlayerIds.clear();
+}
+
+function applyCardPlayWaitingPlayers(playerIds: string[]): void {
+  const synchronizedPlayerIds = new Set(playerIds);
+
+  cardPlayWaitTimerIds.forEach((timerId, playerId) => {
+    if (synchronizedPlayerIds.has(playerId)) {
+      window.clearTimeout(timerId);
+      cardPlayWaitTimerIds.delete(playerId);
+    } else {
+      // Keep a guest's just-sent action locked until the host acknowledges it
+      // or the short optimistic wait expires.
+      synchronizedPlayerIds.add(playerId);
+    }
+  });
+
+  cardPlayWaitingPlayerIds = synchronizedPlayerIds;
 }
 
 function startTryReplay(): void {
@@ -1778,6 +1843,7 @@ function getOnlineState(): OnlineGameState {
     biteAftermath,
     isTryReplayActive,
     mouthFishMotion,
+    cardPlayWaitingPlayerIds: [...cardPlayWaitingPlayerIds],
     isGameOver,
     logEntries,
     poisonDeadlineAt,
@@ -1806,6 +1872,7 @@ function applyOnlineState(state: OnlineGameState): void {
   isTryReplayActive = Boolean(state.isTryReplayActive && !prefersReducedMotion());
   clearMouthFishMotion();
   mouthFishMotion = state.mouthFishMotion ?? null;
+  applyCardPlayWaitingPlayers(state.cardPlayWaitingPlayerIds ?? []);
   isGameOver = state.isGameOver;
   logEntries = state.logEntries;
   poisonDeadlineAt = state.poisonDeadlineAt;
@@ -3134,6 +3201,7 @@ function renderLog(): string {
 
 function renderChildPanel(player: Player, index: number, variant: "opponent" | "self" = "self"): string {
   const isSelf = variant === "self";
+  const isWaitingAfterOwnPlay = isPlayerWaitingAfterCardPlay(player.id);
   const label = isSelf ? "あなたの子プレイヤー" : (childLabels[index] ?? `子${index + 1}`);
   const candidates = getPlayerCandidates(player.id);
   const latestCandidate = candidates.at(-1);
@@ -3145,7 +3213,7 @@ function renderChildPanel(player: Player, index: number, variant: "opponent" | "
     : "有効な得点候補なし";
 
   return `
-    <article class="child-panel is-${variant} ${getPlayerToneClass(player.id)}">
+    <article class="child-panel is-${variant}${isWaitingAfterOwnPlay ? " is-card-waiting" : ""} ${getPlayerToneClass(player.id)}"${isWaitingAfterOwnPlay ? ' aria-busy="true"' : ""}>
       <header class="child-header">
         <div>
           <p class="section-label">${label}</p>
@@ -3176,12 +3244,16 @@ function renderHandSlot(player: Player, card: PlayerCard | null, slotIndex: numb
     return '<div class="hand-slot"><div class="play-card empty-card"><span>空</span></div></div>';
   }
 
+  const isWaitingAfterOwnPlay = isPlayerWaitingAfterCardPlay(player.id);
   const canUse =
     (gameMode === "pvp" || player.id === localPlayerId) &&
     player.role === "child" &&
     isMouthOpen &&
     !isGameOver &&
-    !mouthFishMotion;
+    !isWaitingAfterOwnPlay;
+  const unavailableTitle = isWaitingAfterOwnPlay
+    ? "自分が出した魚の演出中です。少し待つと、また出せます。"
+    : "口が開いている間だけ使用できます。";
   const ownPoisonMakesFishIneffective = card.type === "fish" && activePoison?.ownerId === player.id;
   const fishLabel = card.type === "fish" ? getFishCardLabel(card) : "";
   const playLabel = ownPoisonMakesFishIneffective
@@ -3218,7 +3290,7 @@ function renderHandSlot(player: Player, card: PlayerCard | null, slotIndex: numb
         ${canStack ? `data-stack-value="${card.value}"` : ""}
         ${canStack ? 'aria-keyshortcuts="S"' : ""}
         ${canUse ? "" : " disabled"}
-        title="${canUse ? `${playLabel}${canStack ? "。同じ数字のカードへドラッグするか、Sキーで群れにできます。" : ""}` : "口が開いている間だけ使用できます。"}"
+        title="${canUse ? `${playLabel}${canStack ? "。同じ数字のカードへドラッグするか、Sキーで群れにできます。" : ""}` : unavailableTitle}"
       >
         ${isSchool ? '<span class="school-card-layer" aria-hidden="true"></span>' : ""}
         <img class="card-fish-art" src="${artValue ? fishArtPaths[artValue] : "./assets/cards/poison-fish.png"}" alt="" aria-hidden="true">
@@ -3231,7 +3303,7 @@ function renderHandSlot(player: Player, card: PlayerCard | null, slotIndex: numb
         data-player-id="${player.id}"
         data-slot-index="${slotIndex}"
         ${canUse ? "" : " disabled"}
-        title="${getPlayerCandidates(player.id).length > 0 ? "このカードを裏向きで使って逃げます。" : "逃げる権利がないため、出しても効果はなく使用済みになります。"}"
+        title="${canUse ? (getPlayerCandidates(player.id).length > 0 ? "このカードを裏向きで使って逃げます。" : "逃げる権利がないため、出しても効果はなく使用済みになります。") : unavailableTitle}"
       >
         ${escapeLabel}
       </button>
