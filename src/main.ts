@@ -214,12 +214,10 @@ appRoot.addEventListener("click", (event) => {
   if (countButton) {
     const nextPlayerCount = Number(countButton.dataset.playerCount);
     if (!Number.isInteger(nextPlayerCount) || nextPlayerCount < 3 || nextPlayerCount > 6) return;
-    if (onlineLobbyOpen && onlineRole === "guest") return;
-    if (onlineLobbyOpen && onlineRole === "host" && nextPlayerCount < getMinimumOnlinePlayerCount()) return;
+    if (onlineLobbyOpen && onlineRole !== "none") return;
 
     draftPlayerCount = nextPlayerCount;
     if (draftParentIndex >= draftPlayerCount) draftParentIndex = 0;
-    if (onlineLobbyOpen && onlineRole === "host") broadcastOnlineLobby();
     render();
     return;
   }
@@ -228,10 +226,9 @@ appRoot.addEventListener("click", (event) => {
   if (difficultyButton) {
     const nextDifficulty = difficultyButton.dataset.cpuDifficulty;
     if (!isCpuDifficulty(nextDifficulty)) return;
-    if (onlineLobbyOpen && onlineRole === "guest") return;
+    if (onlineLobbyOpen && onlineRole !== "none") return;
 
     cpuDifficulty = nextDifficulty;
-    if (onlineLobbyOpen && onlineRole === "host") broadcastOnlineLobby();
     render();
     return;
   }
@@ -680,7 +677,7 @@ function attachGuestConnection(connection: DataConnection): void {
     onlinePlayerNames.set(availableId, sanitizePlayerName(metadata?.playerName, `プレイヤー${onlineHumanPlayerIds.size}`));
     updateOnlineLobbyMembers();
     connection.send({ type: "welcome", playerId: availableId, roomCode });
-    onlineStatus = `${onlineHumanPlayerIds.size}人が参加中です。ホストがゲームを開始できます。`;
+    onlineStatus = "友達が参加しました。ゲームを開始できます。";
     broadcastOnlineLobby();
     render();
   });
@@ -778,8 +775,6 @@ function handleGuestMessage(raw: unknown): void {
     playerId?: string;
     state?: OnlineGameState;
     members?: OnlineLobbyMember[];
-    playerCount?: number;
-    cpuDifficulty?: CpuDifficulty;
   };
   if (message.type === "welcome" && message.playerId) {
     onlineJoinRejected = false;
@@ -790,11 +785,7 @@ function handleGuestMessage(raw: unknown): void {
   } else if (message.type === "lobby" && message.members) {
     onlineJoinRejected = false;
     onlineLobbyMembers = message.members;
-    if (typeof message.playerCount === "number" && Number.isInteger(message.playerCount) && message.playerCount >= 3 && message.playerCount <= 6) {
-      draftPlayerCount = message.playerCount;
-    }
-    if (isCpuDifficulty(message.cpuDifficulty)) cpuDifficulty = message.cpuDifficulty;
-    onlineStatus = `${message.members.length}人が参加中です。ホストが開始するのを待っています。`;
+    onlineStatus = "ホストがゲームを開始するのを待っています。";
     render();
   } else if (message.type === "state" && message.state) {
     applyOnlineState(message.state);
@@ -847,21 +838,6 @@ function isCpuDifficulty(value: unknown): value is CpuDifficulty {
   return value === "easy" || value === "normal" || value === "hard";
 }
 
-function getCpuDifficultyLabel(): string {
-  return { easy: "弱い", normal: "ふつう", hard: "強い" }[cpuDifficulty];
-}
-
-function getMinimumOnlinePlayerCount(): number {
-  const occupiedSeatNumbers = [...onlineHumanPlayerIds]
-    .map((playerId) => Number(playerId.match(/^player-(\d+)$/)?.[1] ?? 0))
-    .filter((seatNumber) => Number.isInteger(seatNumber));
-  return Math.max(3, ...occupiedSeatNumbers);
-}
-
-function getOnlineCpuCount(): number {
-  return Math.max(0, draftPlayerCount - onlineLobbyMembers.length);
-}
-
 function updateOnlineLobbyMembers(): void {
   onlineLobbyMembers = [...onlineHumanPlayerIds].map((playerId) => ({
     playerId,
@@ -871,7 +847,7 @@ function updateOnlineLobbyMembers(): void {
 }
 
 function broadcastOnlineLobby(): void {
-  const message = { type: "lobby", members: onlineLobbyMembers, playerCount: draftPlayerCount, cpuDifficulty };
+  const message = { type: "lobby", members: onlineLobbyMembers };
   guestConnections.filter((connection) => connection.open).forEach((connection) => connection.send(message));
 }
 
@@ -2063,7 +2039,7 @@ function render(): void {
           gameMode === "online"
             ? `
               <section class="setup-bar compact-setup online-game-settings" aria-label="オンラインゲーム設定">
-                <p><strong>オンライン設定は固定されています</strong><span>${playerCount}人・CPUレベル ${getCpuDifficultyLabel()}</span></p>
+                <p><strong>オンライン対戦中</strong><span>部屋の設定はゲーム開始時に固定されています</span></p>
                 <button class="text-button" type="button" data-action="back-to-title">タイトルへ戻る</button>
               </section>
             `
@@ -2197,35 +2173,24 @@ function renderOnlineLobby(): string {
   const isHost = onlineRole === "host";
   const isGuest = onlineRole === "guest";
   const humanCount = onlineLobbyMembers.length;
-  const cpuCount = getOnlineCpuCount();
   const canStart = isHost && humanCount >= 2;
+  const isWaitingRoom = isHost || isGuest;
+  const pageTitle = isGuest && onlineJoinRejected ? "参加できませんでした" : isWaitingRoom ? "参加を待っています" : "友達と対戦";
   return `
     <main class="start-screen">
-      <section class="start-card online-lobby" aria-labelledby="online-title">
-        <p class="start-eyebrow">ONLINE ROOM</p>
-        <h1 id="online-title">友達と対戦</h1>
+      <section class="start-card online-lobby${isWaitingRoom ? " is-waiting-room" : ""}" aria-labelledby="online-title">
+        <p class="start-eyebrow">${isWaitingRoom ? "WAITING ROOM" : "ONLINE ROOM"}</p>
+        <h1 id="online-title">${pageTitle}</h1>
         ${
           isHost
             ? `
+              <p class="waiting-room-copy">友達に参加コードを送り、この画面で参加を待ちます。</p>
               <p class="room-label">参加コード</p>
               <div class="room-code" aria-label="参加コード ${roomCode}">${roomCode || "------"}</div>
-              <section class="online-room-settings" aria-labelledby="host-settings-title">
-                <div class="online-settings-heading">
-                  <h2 id="host-settings-title">ホスト設定</h2>
-                  <span>部屋を作った人だけ変更できます</span>
-                </div>
-                <fieldset class="online-setting-group">
-                  <legend>合計プレイ人数</legend>
-                  <p>友達が参加していない空き枠にはCPUが入ります。</p>
-                  ${renderPlayerCountOptions(getMinimumOnlinePlayerCount())}
-                </fieldset>
-                ${renderCpuDifficultyOptions("残りのCPUの強さ")}
-                <p class="online-cpu-note">人間 ${humanCount}人 ＋ CPU ${cpuCount}人 ＝ 合計 ${draftPlayerCount}人</p>
-              </section>
-              ${renderOnlineParticipants()}
+              ${renderOnlineWaitingCount()}
               <p class="online-status" role="status" aria-live="polite">${onlineStatus}</p>
-              <button class="primary-button lobby-action" type="button" data-action="start-online-game" ${canStart ? "" : "disabled"}>${canStart ? `${draftPlayerCount}人でゲームを開始` : "友達の参加を待っています"}</button>
-              ${canStart ? "" : `<p class="lobby-hint">友達が1人以上参加すると、残りの席をCPUで埋めて開始できます。</p>`}
+              <button class="primary-button lobby-action" type="button" data-action="start-online-game" ${canStart ? "" : "disabled"}>${canStart ? "ゲームを開始" : "友達の参加を待っています"}</button>
+              ${canStart ? "" : `<p class="lobby-hint">友達が1人以上参加すると開始できます。</p>`}
             `
             : isGuest
               ? onlineJoinRejected
@@ -2237,9 +2202,7 @@ function renderOnlineLobby(): string {
                 `
                 : `
                   <div class="waiting-spinner" aria-hidden="true"></div>
-                  <p class="start-lead">ホストがゲームを開始するまで、この画面でお待ちください。</p>
-                  ${onlineLobbyMembers.length > 0 ? renderOnlineRoomSummary() : ""}
-                  ${renderOnlineParticipants()}
+                  ${renderOnlineWaitingCount()}
                   <p class="online-status" role="status" aria-live="polite">${onlineStatus}</p>
                 `
               : renderOnlineEntry()
@@ -2310,32 +2273,19 @@ function renderOnlineEntry(): string {
   `;
 }
 
-function renderOnlineRoomSummary(): string {
-  const humanCount = onlineLobbyMembers.length;
-  const cpuCount = getOnlineCpuCount();
+function renderOnlineWaitingCount(): string {
+  const participantCount = onlineLobbyMembers.length;
+  const countLabel = participantCount > 0 ? `${participantCount}人が参加中` : "参加人数を確認中";
+  const note = participantCount === 0
+    ? "部屋に接続しています"
+    : participantCount === 1
+      ? "ホストを含む現在の人数です"
+      : "ホストを含む現在の参加人数です";
   return `
-    <div class="online-room-summary" aria-label="現在の部屋設定">
-      <span><strong>${draftPlayerCount}</strong><small>合計人数</small></span>
-      <span><strong>${humanCount}</strong><small>人間</small></span>
-      <span><strong>${cpuCount}</strong><small>CPU</small></span>
-      <span><strong>${getCpuDifficultyLabel()}</strong><small>CPUレベル</small></span>
-    </div>
-  `;
-}
-
-function renderOnlineParticipants(): string {
-  if (onlineLobbyMembers.length === 0) return "";
-  const cpuCount = getOnlineCpuCount();
-  return `
-    <section class="participant-panel" aria-label="参加者一覧">
-      <div class="participant-summary">
-        <strong>人間の参加者 ${onlineLobbyMembers.length}人</strong>
-        <span>空き枠のCPU ${cpuCount}人</span>
-      </div>
-      <ul class="participant-list">
-        ${onlineLobbyMembers.map((member) => `<li><span>${escapeHtml(member.name)}</span>${member.isHost ? "<strong>ホスト・最初の親</strong>" : "<small>友達</small>"}</li>`).join("")}
-        ${cpuCount > 0 ? `<li class="cpu-participant"><span>CPU × ${cpuCount}人</span><small>レベル：${getCpuDifficultyLabel()}</small></li>` : ""}
-      </ul>
+    <section class="online-waiting-count" role="status" aria-live="polite" aria-atomic="true" aria-label="${countLabel}">
+      <span>現在の参加人数</span>
+      ${participantCount > 0 ? `<strong><b>${participantCount}</b>人</strong>` : '<strong class="is-connecting">確認中</strong>'}
+      <small>${note}</small>
     </section>
   `;
 }
