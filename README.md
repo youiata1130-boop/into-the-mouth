@@ -21,8 +21,12 @@ npm run dev
 - `src/game/deck.ts`: 山札作成、ドロー、公開札の補充
 - `src/game/rules.ts`: 捕食、得点候補、親得点の計算
 - `src/game/random.ts`: シャッフルと乱数処理
+- `src/assets/paths.ts`: 公開画像の参照先
 - `src/ui/dom.ts`: フォーカス復元などのDOM補助
-- `src/styles.css`: 画面スタイル
+- `src/styles/main.css`: 画面スタイルとアニメーション
+- `public/assets/creatures/`: 魚、タコ、毒魚などの画像
+- `public/assets/whale/`: 親の通常・開口・食後・毒魚リアクション画像
+- `scripts/`: ビルドや公開用の補助処理
 
 ## 実装済みの主なルール
 

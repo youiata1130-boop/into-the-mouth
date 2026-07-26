@@ -1,6 +1,7 @@
-import "./styles.css";
+import "./styles/main.css";
 import { Peer } from "peerjs";
 import type { DataConnection } from "peerjs";
+import { fishArtPaths, poisonFishArtPath, whaleArtPaths } from "./assets/paths";
 import {
   CHILD_LABELS as childLabels,
   HUMAN_PLAYER_ID as humanPlayerId,
@@ -111,15 +112,6 @@ type OnlineGameState = {
 const appRoot = getAppRoot();
 const biteAftermathDurationMs = 1500;
 const mouthFishMotionDurationMs = 900;
-
-const fishArtPaths: Record<FishValue, string> = {
-  2: "./assets/cards/value-2-sardine.png",
-  3: "./assets/cards/value-3-fish.png",
-  4: "./assets/cards/value-4-octopus.png",
-  5: "./assets/cards/value-5-shark.png",
-  6: "./assets/cards/value-5-shark.png",
-  9: "./assets/cards/value-3-fish.png"
-};
 
 let hasStarted = false;
 let gameMode: GameMode = "cpu";
@@ -2570,8 +2562,8 @@ function renderTryReplayOverlay(): string {
             showWhale
               ? `
                 <div class="try-replay-whale${whaleIsPoisoned ? " is-poisoned" : ""}" style="--motion-delay: ${schedule.finalAt}ms" aria-hidden="true">
-                  <img class="try-replay-whale-open" src="./assets/mouth/whale-open.png" alt="">
-                  <img class="try-replay-whale-fed" src="${whaleIsPoisoned ? "./assets/mouth/whale-poisoned.png" : "./assets/mouth/whale-fed.png"}" alt="">
+                  <img class="try-replay-whale-open" src="${whaleArtPaths.open}" alt="">
+                  <img class="try-replay-whale-fed" src="${whaleIsPoisoned ? whaleArtPaths.poisoned : whaleArtPaths.fed}" alt="">
                   <strong>パク！</strong>
                 </div>
               `
@@ -3057,14 +3049,14 @@ function renderMouth(): string {
       : "is-closed";
   return `
     <div class="mouth ${mouthClass}">
-      <img class="whale-face whale-face-closed" src="./assets/mouth/whale-front.png" alt="" aria-hidden="true">
-      <img class="whale-face whale-face-fed" src="./assets/mouth/whale-fed.png" alt="" aria-hidden="true">
-      <img class="whale-face whale-face-poisoned" src="./assets/mouth/whale-poisoned.png" alt="" aria-hidden="true">
+      <img class="whale-face whale-face-closed" src="${whaleArtPaths.closed}" alt="" aria-hidden="true">
+      <img class="whale-face whale-face-fed" src="${whaleArtPaths.fed}" alt="" aria-hidden="true">
+      <img class="whale-face whale-face-poisoned" src="${whaleArtPaths.poisoned}" alt="" aria-hidden="true">
       <div class="jaw jaw-top" aria-hidden="true">
         <span></span><span></span><span></span><span></span><span></span>
       </div>
       <div class="mouth-camera-layer">
-        <img class="whale-face whale-face-open" src="./assets/mouth/whale-open.png" alt="" aria-hidden="true">
+        <img class="whale-face whale-face-open" src="${whaleArtPaths.open}" alt="" aria-hidden="true">
         <div class="mouth-cavity">
           ${renderMouthFishScene()}
         </div>
@@ -3183,7 +3175,7 @@ function renderMouthFishVisual(card: BaitBoxCard | FishBoxCard | PoisonBoxCard):
   }
 
   const artPath = card.type === "poison"
-    ? "./assets/cards/poison-fish.png"
+    ? poisonFishArtPath
     : fishArtPaths[card.schoolBaseValue ?? card.value];
   const valueBadge = card.type === "fish"
     ? `<span class="mouth-fish-value">${card.value}</span>`
@@ -3303,7 +3295,7 @@ function renderBoxCard(card: BoxCard, concealed = false): string {
     return `
       <article${poisonAccessibility} class="box-card poison-card ${card.status === "active" ? "is-active" : "is-spent"} is-${card.status} ${getPlayerToneClass(card.ownerId)}">
         <span class="card-sequence">${card.sequence}</span>
-        <img class="card-fish-art" src="./assets/cards/poison-fish.png" alt="" aria-hidden="true">
+        <img class="card-fish-art" src="${poisonFishArtPath}" alt="" aria-hidden="true">
         <span class="card-symbol poison-symbol" aria-hidden="true">&#9760;</span>
       </article>
     `;
@@ -3475,7 +3467,7 @@ function renderHandSlot(player: Player, card: PlayerCard | null, slotIndex: numb
   const valueLabel = card.type === "poison" ? "" : String(card.value);
   const cardArtwork = card.type === "fish"
     ? renderCardFishArtwork(card.schoolBaseValue ?? card.value, card.schoolSize)
-    : '<img class="card-fish-art" src="./assets/cards/poison-fish.png" alt="" aria-hidden="true">';
+    : `<img class="card-fish-art" src="${poisonFishArtPath}" alt="" aria-hidden="true">`;
   const escapeCandidate = getPlayerCandidates(player.id).at(-1);
   const escapePoints = escapeCandidate ? sumCapturedIds(escapeCandidate.capturedIds, player.id) : 0;
   const escapeLabel = escapeCandidate ? `裏で逃げる ${escapePoints}点` : "裏で逃げる（効果なし）";
