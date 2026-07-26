@@ -3827,16 +3827,6 @@ body {
   transform: translate(-50%, -50%) scale(1);
 }
 
-.mouth-fish-cutout.is-school-mate {
-  position: absolute;
-  left: 3%;
-  top: 3%;
-  z-index: -1;
-  width: 94%;
-  opacity: 0.78;
-  transform: rotate(-5deg);
-}
-
 .mouth-fish-value {
   position: absolute;
   right: 3%;
@@ -4597,4 +4587,249 @@ body {
 
 .try-replay-fish.size-value-6 .mouth-fish-cutout {
   width: 100%;
+}
+
+/* Schools keep each small fish at its natural scale and spread them into a formation. */
+.mouth-fish-actor.is-school.size-value-2 {
+  max-width: 142px;
+}
+
+.mouth-fish-actor.is-school.size-value-3 {
+  max-width: 207px;
+}
+
+.mouth-fish-school {
+  position: relative;
+  display: block;
+  width: 100%;
+  isolation: isolate;
+}
+
+.mouth-fish-school.school-count-2 {
+  aspect-ratio: 1.75;
+}
+
+.mouth-fish-school.school-count-3 {
+  aspect-ratio: 1.35;
+}
+
+.mouth-fish-school .school-fish-member {
+  --school-turn: 0deg;
+  position: absolute;
+  z-index: 1;
+  width: 67%;
+  margin: 0;
+  opacity: 1;
+  transform-origin: center;
+  animation: mouth-school-swim 2.6s ease-in-out infinite;
+}
+
+.mouth-fish-school .member-1 {
+  z-index: 3;
+}
+
+.mouth-fish-school .member-2 {
+  z-index: 2;
+  animation-delay: -0.85s;
+}
+
+.mouth-fish-school .member-3 {
+  z-index: 1;
+  animation-delay: -1.7s;
+}
+
+.mouth-fish-school.school-count-2 .member-1 {
+  --school-turn: -3deg;
+  left: 0;
+  top: 7%;
+}
+
+.mouth-fish-school.school-count-2 .member-2 {
+  --school-turn: 3deg;
+  left: 33%;
+  top: 56%;
+}
+
+.mouth-fish-school.school-count-3 .member-1 {
+  --school-turn: -1deg;
+  left: 16.5%;
+  top: 0;
+}
+
+.mouth-fish-school.school-count-3 .member-2 {
+  --school-turn: -4deg;
+  left: 0;
+  top: 39%;
+}
+
+.mouth-fish-school.school-count-3 .member-3 {
+  --school-turn: 4deg;
+  left: 33%;
+  top: 39%;
+}
+
+.mouth-school-count {
+  position: absolute;
+  left: 2%;
+  top: 3%;
+  z-index: 5;
+  border: 1px solid rgba(255, 255, 255, 0.82);
+  border-radius: 999px;
+  padding: 2px 6px;
+  background: rgba(18, 61, 67, 0.86);
+  color: #fff;
+  font-size: clamp(0.48rem, 1.3vw, 0.68rem);
+  font-weight: 1000;
+  line-height: 1.15;
+  white-space: nowrap;
+}
+
+/* The score replay uses the same real fish count in a tighter frame. */
+.try-replay-fish.is-school .mouth-fish-school {
+  width: 100%;
+}
+
+.try-replay-fish.is-school .mouth-fish-school.school-count-2 .school-fish-member {
+  width: 62%;
+}
+
+.try-replay-fish.is-school .mouth-fish-school.school-count-3 .school-fish-member {
+  width: 58%;
+}
+
+.try-replay-fish.is-school .mouth-school-count {
+  left: -4%;
+  top: -3%;
+}
+
+/* Merged hand and timeline cards also show every fish in the school. */
+.card-school-art {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.card-school-fish {
+  --school-card-turn: 0deg;
+  position: absolute;
+  display: block;
+  overflow: hidden;
+  border-radius: 50%;
+  opacity: 0.68;
+  mix-blend-mode: multiply;
+  transform-origin: center;
+  animation: card-school-swim 2.8s ease-in-out infinite;
+  -webkit-mask-image: radial-gradient(ellipse 62% 72% at 50% 50%, #000 84%, transparent 100%);
+  mask-image: radial-gradient(ellipse 62% 72% at 50% 50%, #000 84%, transparent 100%);
+}
+
+.card-school-fish img {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 100%;
+  max-width: none;
+  height: auto;
+  transform: translate(-50%, -50%) scale(1.08);
+  -webkit-user-drag: none;
+  user-select: none;
+}
+
+.card-school-art .member-2 {
+  animation-delay: -0.9s;
+}
+
+.card-school-art .member-3 {
+  animation-delay: -1.8s;
+}
+
+.card-school-art.art-value-2 .card-school-fish {
+  width: 82%;
+  aspect-ratio: 3.55;
+  -webkit-mask-image: radial-gradient(ellipse 58% 82% at 50% 50%, #000 86%, transparent 100%);
+  mask-image: radial-gradient(ellipse 58% 82% at 50% 50%, #000 86%, transparent 100%);
+}
+
+.card-school-art.art-value-2 .card-school-fish img {
+  transform: translate(-50%, -50%) scale(1.5);
+}
+
+.card-school-art.school-count-2 .member-1 {
+  --school-card-turn: -3deg;
+  left: 0;
+  top: 19%;
+}
+
+.card-school-art.school-count-2 .member-2 {
+  --school-card-turn: 3deg;
+  left: 18%;
+  top: 55%;
+}
+
+.card-school-art.art-value-3 .card-school-fish {
+  width: 70%;
+  aspect-ratio: 1.5;
+}
+
+.card-school-art.school-count-3 .member-1 {
+  --school-card-turn: -1deg;
+  left: 15%;
+  top: -5%;
+}
+
+.card-school-art.school-count-3 .member-2 {
+  --school-card-turn: -4deg;
+  left: 0;
+  top: 47%;
+}
+
+.card-school-art.school-count-3 .member-3 {
+  --school-card-turn: 4deg;
+  left: 30%;
+  top: 47%;
+}
+
+.school-fish-count-badge {
+  position: absolute;
+  right: 4px;
+  top: 4px;
+  z-index: 4;
+  border: 1px solid rgba(255, 255, 255, 0.88);
+  border-radius: 999px;
+  padding: 2px 5px;
+  background: #0d5960;
+  box-shadow: 0 2px 5px rgba(20, 31, 34, 0.25);
+  color: #fff;
+  font-size: clamp(0.5rem, 1.2vw, 0.68rem);
+  font-weight: 1000;
+  line-height: 1;
+}
+
+@keyframes mouth-school-swim {
+  0%,
+  100% {
+    transform: translate(0, -2px) rotate(var(--school-turn));
+  }
+  50% {
+    transform: translate(3px, 2px) rotate(var(--school-turn));
+  }
+}
+
+@keyframes card-school-swim {
+  0%,
+  100% {
+    transform: translate(0, -1px) rotate(var(--school-card-turn));
+  }
+  50% {
+    transform: translate(2px, 1px) rotate(var(--school-card-turn));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .school-fish-member,
+  .card-school-fish {
+    animation: none !important;
+  }
 }

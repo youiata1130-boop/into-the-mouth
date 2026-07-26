@@ -1217,8 +1217,19 @@ function startFishEntryMotion(
 
 function getFishCardLabel(card: FishCard | FishBoxCard): string {
   return card.schoolBaseValue
-    ? `${card.schoolBaseValue}の群れ（強さ${card.value}）`
+    ? `${card.schoolBaseValue}の群れ（${getSchoolVisualFishCount(card)}匹・強さ${card.value}）`
     : `魚「${card.value}」`;
+}
+
+function getSchoolVisualFishCount(card: Pick<FishCard, "schoolBaseValue">): number {
+  return card.schoolBaseValue ?? 1;
+}
+
+function getLiveMouthFishCount(): number {
+  return getLiveMouthNumericCards().reduce(
+    (total, card) => total + (card.type === "fish" ? getSchoolVisualFishCount(card) : 0),
+    0
+  );
 }
 
 function playPoison(player: Player, slotIndex: number): void {
@@ -2044,7 +2055,7 @@ function render(): void {
             ${renderStat("親ラウンド", `${Math.min(completedParentRounds + 1, playerCount)}/${playerCount}`)}
             ${renderStat("トライ", `${currentTry}/${maxTriesPerParent}`)}
             ${renderStat("口", getMouthStatusLabel())}
-            ${renderStat("泳ぐ魚", `${getLiveMouthNumericCards().filter((card) => card.type === "fish").length}匹`)}
+            ${renderStat("泳ぐ魚", `${getLiveMouthFishCount()}匹`)}
           </div>
         </header>
 
@@ -2354,7 +2365,7 @@ function renderRulesSummary(): string {
           <li>同じ数字では捕食が止まります。食べられた魚が抱えていた魚も、まとめて大きい魚へ引き継がれます。</li>
           <li>口の中は固定画面で、数字が小さい魚ほど小さく、大きい魚ほど大きく表示されます。</li>
           <li>魚は数字に関係なく出せます。</li>
-          <li>口が開いている間、同じ2同士または3同士をドラッグして重ねると群れになります。2の群れは強さ4、3の群れは強さ6です。</li>
+          <li>口が開いている間、同じ2同士または3同士をドラッグして重ねると群れになります。2の群れは2匹で強さ4、3の群れは3匹で強さ6として泳ぎます。</li>
           <li>群れを作って空いた公開枠には、山札があれば即座に1枚補充します。群れは1枚の魚として出し、再び重ねたり分けたりはできません。</li>
           <li>得点時は、得点する人自身が出したカードを除き、食べた数字カードを得点します。</li>
           <li>逃げ成功時は、逃げる魚自身と同じ子が以前に出した魚を除いて得点します。</li>
@@ -2859,7 +2870,7 @@ function getBoxCard(boxId: number): BoxCard | null {
 function getTryReplayCardLabel(card: BoxCard | null): string {
   if (!card) return "カード";
   if (card.type === "bait") return "親の餌1";
-  if (card.type === "fish") return card.schoolBaseValue ? `${card.schoolBaseValue}の群れ` : `魚${card.value}`;
+  if (card.type === "fish") return card.schoolBaseValue ? `${card.schoolBaseValue}の群れ${getSchoolVisualFishCount(card)}匹` : `魚${card.value}`;
   if (card.type === "poison") return "毒魚";
   return "逃げるカード";
 }
@@ -3056,7 +3067,7 @@ function renderRoundActionButtons(): string {
 }
 
 function renderMouth(): string {
-  const liveFishCount = getLiveMouthNumericCards().filter((card) => card.type === "fish").length;
+  const liveFishCount = getLiveMouthFishCount();
   const mouthClass = isMouthOpen
     ? "is-open"
     : biteAftermath
@@ -3198,14 +3209,22 @@ function renderMouthFishVisual(card: BaitBoxCard | FishBoxCard | PoisonBoxCard):
   const valueBadge = card.type === "fish"
     ? `<span class="mouth-fish-value">${card.value}</span>`
     : '<span class="mouth-fish-value is-poison-mark">&#9760;</span>';
-  const schoolMate = card.type === "fish" && card.schoolSize === 2
-    ? `<span class="mouth-fish-cutout is-school-mate" aria-hidden="true"><img src="${artPath}" alt=""></span>`
+  const schoolFishCount = card.type === "fish" ? getSchoolVisualFishCount(card) : 1;
+  const fishArtwork = schoolFishCount > 1
+    ? `
+      <span class="mouth-fish-school school-count-${schoolFishCount}" aria-hidden="true">
+        ${Array.from({ length: schoolFishCount }, (_, index) => `<span class="mouth-fish-cutout school-fish-member member-${index + 1}"><img src="${artPath}" alt=""></span>`).join("")}
+      </span>
+    `
+    : `<span class="mouth-fish-cutout" aria-hidden="true"><img src="${artPath}" alt=""></span>`;
+  const schoolCountBadge = schoolFishCount > 1
+    ? `<span class="mouth-school-count" aria-hidden="true">${schoolFishCount}匹</span>`
     : "";
 
   return `
-    ${schoolMate}
-    <span class="mouth-fish-cutout" aria-hidden="true"><img src="${artPath}" alt=""></span>
+    ${fishArtwork}
     ${valueBadge}
+    ${schoolCountBadge}
     <span class="mouth-fish-owner">${card.ownerName}</span>
   `;
 }
@@ -3236,6 +3255,8 @@ function getMouthFishSize(card: BoxCard): number {
   if (card.type === "bait") return 6;
   if (card.type === "poison") return 28;
   if (card.type !== "fish") return 12;
+  if (card.schoolBaseValue === 2) return 27;
+  if (card.schoolBaseValue === 3) return 39;
   const visualValue = card.schoolBaseValue ?? card.value;
   if (visualValue === 2) return 18;
   if (visualValue === 3) return 26;
@@ -3248,8 +3269,10 @@ function getMouthFishActorLabel(card: BoxCard): string {
   if (card.type === "bait") return `${card.ownerName}の餌、1`;
   if (card.type === "poison") return `${card.ownerName}の毒魚`;
   if (card.type === "escape") return `${card.ownerName}の逃げる`;
-  const schoolText = card.schoolSize === 2 ? "の群れ" : "";
-  return `${card.ownerName}の魚${schoolText}、強さ${card.value}`;
+  if (card.schoolBaseValue) {
+    return `${card.ownerName}の${card.schoolBaseValue}の群れ、${getSchoolVisualFishCount(card)}匹、強さ${card.value}`;
+  }
+  return `${card.ownerName}の魚、強さ${card.value}`;
 }
 
 function getMouthFishMotionAnnouncement(): string {
@@ -3264,6 +3287,21 @@ function getMouthFishMotionAnnouncement(): string {
   }
 
   return entering ? `${getMouthFishActorLabel(entering)}が泳いできました。` : "";
+}
+
+function renderCardFishArtwork(artValue: FishValue, schoolBaseValue?: FishCard["schoolBaseValue"]): string {
+  const artPath = fishArtPaths[artValue];
+  const fishCount = schoolBaseValue ?? 1;
+
+  if (fishCount === 1) {
+    return `<img class="card-fish-art" src="${artPath}" alt="" aria-hidden="true">`;
+  }
+
+  return `
+    <span class="card-school-art art-value-${artValue} school-count-${fishCount}" aria-hidden="true">
+      ${Array.from({ length: fishCount }, (_, index) => `<span class="card-school-fish member-${index + 1}"><img src="${artPath}" alt=""></span>`).join("")}
+    </span>
+  `;
 }
 
 function renderBoxCard(card: BoxCard, concealed = false): string {
@@ -3308,8 +3346,9 @@ function renderBoxCard(card: BoxCard, concealed = false): string {
     <article${accessibility} class="box-card fish-card-in-box value-${card.value} ${card.schoolSize === 2 ? "is-school" : ""} ${card.consumedById ? "is-eaten" : ""} ${card.poisonScoredById ? "is-poison-scored" : ""} ${card.invalidatedByOwnPoison ? "is-ineffective" : ""} ${card.escaped ? "is-escaped" : ""} ${getPlayerToneClass(card.ownerId)}">
       <span class="card-sequence">${card.sequence}</span>
       ${card.schoolSize === 2 ? '<span class="school-card-layer" aria-hidden="true"></span>' : ""}
-      <img class="card-fish-art" src="${fishArtPaths[fishArtValue]}" alt="" aria-hidden="true">
+      ${renderCardFishArtwork(fishArtValue, card.schoolBaseValue)}
       <span class="card-value">${card.value}</span>
+      ${card.schoolBaseValue ? `<span class="school-fish-count-badge" aria-hidden="true">${getSchoolVisualFishCount(card)}匹</span>` : ""}
     </article>
   `;
 }
@@ -3449,7 +3488,9 @@ function renderHandSlot(player: Player, card: PlayerCard | null, slotIndex: numb
     ? "poison-hand-card"
     : `fish-hand-card value-${card.value}${isSchool ? " is-school" : ""}`;
   const valueLabel = card.type === "poison" ? "" : String(card.value);
-  const artValue = card.type === "fish" ? (card.schoolBaseValue ?? card.value) : null;
+  const cardArtwork = card.type === "fish"
+    ? renderCardFishArtwork(card.schoolBaseValue ?? card.value, card.schoolBaseValue)
+    : '<img class="card-fish-art" src="./assets/cards/poison-fish.png" alt="" aria-hidden="true">';
   const escapeCandidate = getPlayerCandidates(player.id).at(-1);
   const escapePoints = escapeCandidate ? sumCapturedIds(escapeCandidate.capturedIds, player.id) : 0;
   const escapeLabel = escapeCandidate ? `裏で逃げる ${escapePoints}点` : "裏で逃げる（効果なし）";
@@ -3469,8 +3510,9 @@ function renderHandSlot(player: Player, card: PlayerCard | null, slotIndex: numb
         title="${canUse ? `${playLabel}${canStack ? "。同じ数字のカードへドラッグするか、Sキーで群れにできます。" : ""}` : unavailableTitle}"
       >
         ${isSchool ? '<span class="school-card-layer" aria-hidden="true"></span>' : ""}
-        <img class="card-fish-art" src="${artValue ? fishArtPaths[artValue] : "./assets/cards/poison-fish.png"}" alt="" aria-hidden="true">
+        ${cardArtwork}
         ${card.type === "poison" ? '<span class="card-symbol poison-symbol" aria-hidden="true">&#9760;</span>' : `<span class="card-value">${valueLabel}</span>`}
+        ${isSchool ? `<span class="school-fish-count-badge" aria-hidden="true">${getSchoolVisualFishCount(card)}匹</span>` : ""}
       </button>
       <button
         class="escape-chip"
