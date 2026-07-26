@@ -2784,7 +2784,7 @@ function sumTryReplayValues(
 function renderTryReplayCard(card: BoxCard): string {
   if (card.type === "escape") {
     return `
-      <div class="try-replay-fish is-escape-effect ${getPlayerToneClass(card.ownerId)}" aria-label="${card.ownerName}の逃げる">
+      <div class="try-replay-fish is-escape-effect ${getPlayerToneClass(card.ownerId)}" role="img" aria-label="${card.ownerName}の逃げる">
         <span aria-hidden="true">≋</span>
         <strong>逃げる</strong>
       </div>
@@ -2798,7 +2798,7 @@ function renderTryReplayCard(card: BoxCard): string {
       : `value-${card.value} size-value-${card.schoolBaseValue ?? card.value} art-value-${card.schoolBaseValue ?? card.value}${card.schoolSize !== undefined ? " is-school" : ""}`;
 
   return `
-    <div class="try-replay-fish ${typeClass} ${getPlayerToneClass(card.ownerId)}" aria-label="${getMouthFishActorLabel(card)}">
+    <div class="try-replay-fish ${typeClass} ${getPlayerToneClass(card.ownerId)}" role="img" aria-label="${getMouthFishActorLabel(card)}">
       ${renderMouthFishVisual(card)}
     </div>
   `;
@@ -3181,13 +3181,16 @@ function renderMouthFishVisual(card: BaitBoxCard | FishBoxCard | PoisonBoxCard):
     ? `<span class="mouth-fish-value">${card.value}</span>`
     : '<span class="mouth-fish-value is-poison-mark">&#9760;</span>';
   const schoolFishCount = card.type === "fish" ? getSchoolVisualFishCount(card) : 1;
+  const artworkClass = card.type === "poison"
+    ? "is-poison-art"
+    : `art-value-${card.schoolBaseValue ?? card.value}`;
   const fishArtwork = schoolFishCount > 1
     ? `
       <span class="mouth-fish-school school-count-${schoolFishCount}" aria-hidden="true">
-        ${Array.from({ length: schoolFishCount }, (_, index) => `<span class="mouth-fish-cutout school-fish-member member-${index + 1}"><img src="${artPath}" alt=""></span>`).join("")}
+        ${Array.from({ length: schoolFishCount }, (_, index) => `<span class="mouth-fish-cutout school-fish-member member-${index + 1}"><img class="${artworkClass}" src="${artPath}" alt=""></span>`).join("")}
       </span>
     `
-    : `<span class="mouth-fish-cutout" aria-hidden="true"><img src="${artPath}" alt=""></span>`;
+    : `<span class="mouth-fish-cutout" aria-hidden="true"><img class="${artworkClass}" src="${artPath}" alt=""></span>`;
   const schoolCountBadge = schoolFishCount > 1
     ? `<span class="mouth-school-count" aria-hidden="true">${schoolFishCount}匹</span>`
     : "";
@@ -3265,7 +3268,7 @@ function renderCardFishArtwork(artValue: FishValue, schoolSize?: FishCard["schoo
   const fishCount = schoolSize ?? 1;
 
   if (fishCount === 1) {
-    return `<img class="card-fish-art" src="${artPath}" alt="" aria-hidden="true">`;
+    return `<img class="card-fish-art art-value-${artValue}" src="${artPath}" alt="" aria-hidden="true">`;
   }
 
   return `
@@ -3295,7 +3298,7 @@ function renderBoxCard(card: BoxCard, concealed = false): string {
     return `
       <article${poisonAccessibility} class="box-card poison-card ${card.status === "active" ? "is-active" : "is-spent"} is-${card.status} ${getPlayerToneClass(card.ownerId)}">
         <span class="card-sequence">${card.sequence}</span>
-        <img class="card-fish-art" src="${poisonFishArtPath}" alt="" aria-hidden="true">
+        <img class="card-fish-art is-poison-art" src="${poisonFishArtPath}" alt="" aria-hidden="true">
         <span class="card-symbol poison-symbol" aria-hidden="true">&#9760;</span>
       </article>
     `;
@@ -3467,7 +3470,7 @@ function renderHandSlot(player: Player, card: PlayerCard | null, slotIndex: numb
   const valueLabel = card.type === "poison" ? "" : String(card.value);
   const cardArtwork = card.type === "fish"
     ? renderCardFishArtwork(card.schoolBaseValue ?? card.value, card.schoolSize)
-    : `<img class="card-fish-art" src="${poisonFishArtPath}" alt="" aria-hidden="true">`;
+    : `<img class="card-fish-art is-poison-art" src="${poisonFishArtPath}" alt="" aria-hidden="true">`;
   const escapeCandidate = getPlayerCandidates(player.id).at(-1);
   const escapePoints = escapeCandidate ? sumCapturedIds(escapeCandidate.capturedIds, player.id) : 0;
   const escapeLabel = escapeCandidate ? `裏で逃げる ${escapePoints}点` : "裏で逃げる（効果なし）";

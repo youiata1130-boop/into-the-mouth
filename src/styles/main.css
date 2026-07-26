@@ -4796,3 +4796,161 @@ body {
     animation: none !important;
   }
 }
+
+/* Keep every illustration legible at the compact board sizes. */
+.board-screen .whale-face {
+  width: min(88%, 680px);
+  filter:
+    drop-shadow(0 16px 22px rgba(10, 67, 88, 0.28))
+    saturate(1.08)
+    contrast(1.04);
+}
+
+.board-screen .mouth.is-open .whale-face-open {
+  top: 50%;
+  width: clamp(700px, 145%, 1080px);
+  transform: translate(-50%, -50%);
+}
+
+.card-fish-art {
+  --card-art-scale: 1.08;
+  object-position: center;
+  opacity: 0.82;
+  mix-blend-mode: normal;
+  filter: saturate(1.08) contrast(1.05);
+  transform: scale(var(--card-art-scale));
+  transform-origin: center;
+}
+
+.card-fish-art.art-value-2 {
+  --card-art-scale: 1.65;
+}
+
+.card-fish-art.art-value-3 {
+  --card-art-scale: 1.12;
+}
+
+.card-fish-art.art-value-4 {
+  --card-art-scale: 1.08;
+  object-position: center 38%;
+}
+
+.card-fish-art.art-value-5,
+.card-fish-art.art-value-6 {
+  --card-art-scale: 1.12;
+}
+
+.card-fish-art.is-poison-art {
+  --card-art-scale: 1.14;
+  opacity: 0.84;
+  filter: saturate(1.16) contrast(1.08) brightness(0.92);
+}
+
+.fish-card-in-box .card-fish-art {
+  opacity: 0.74;
+}
+
+.poison-card .card-fish-art,
+.poison-hand-card .card-fish-art {
+  opacity: 0.84;
+}
+
+.play-card:disabled {
+  opacity: 0.82;
+}
+
+.child-panel.is-opponent .play-card:disabled {
+  opacity: 1;
+}
+
+.play-card:not(.empty-card)::before,
+.fish-card-in-box::before,
+.poison-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background: linear-gradient(180deg, transparent 54%, rgba(24, 36, 40, 0.14));
+  pointer-events: none;
+}
+
+.play-card .card-value,
+.fish-card-in-box .card-value,
+.card-symbol,
+.card-sequence {
+  z-index: 2;
+}
+
+.card-school-fish {
+  opacity: 0.84;
+  filter: saturate(1.08) contrast(1.04);
+}
+
+.mouth-fish-cutout {
+  filter:
+    drop-shadow(0 0 1px rgba(255, 255, 255, 0.9))
+    drop-shadow(0 7px 8px rgba(13, 2, 10, 0.5));
+  -webkit-mask-image: radial-gradient(ellipse 62% 68% at 50% 50%, #000 78%, transparent 98%);
+  mask-image: radial-gradient(ellipse 62% 68% at 50% 50%, #000 78%, transparent 98%);
+}
+
+.mouth-fish-cutout img {
+  filter: saturate(1.12) contrast(1.06);
+}
+
+.mouth-fish-actor.size-value-2 {
+  max-width: 108px;
+}
+
+.mouth-fish-actor.size-value-3 {
+  max-width: 156px;
+}
+
+.mouth-fish-actor.size-value-4 {
+  max-width: 210px;
+}
+
+.mouth-fish-actor.size-value-5 {
+  max-width: 258px;
+}
+
+.mouth-fish-actor.size-value-6 {
+  max-width: 304px;
+}
+
+.mouth-fish-actor.is-poison {
+  max-width: 200px;
+}
+
+.try-replay-whale img {
+  width: 160%;
+  filter: saturate(1.08) contrast(1.04);
+}
+
+.try-replay-stage {
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+}
+
+.try-replay-track {
+  grid-template-columns: repeat(var(--replay-slots), minmax(64px, 1fr));
+}
+
+@media (max-width: 560px) {
+  .board-screen .whale-face {
+    width: 96%;
+  }
+
+  .board-screen .mouth.is-open .whale-face-open {
+    width: clamp(620px, 178%, 780px);
+  }
+
+  .try-replay-whale img {
+    width: 175%;
+  }
+
+  .try-replay-track {
+    grid-template-columns: repeat(var(--replay-slots), minmax(56px, 1fr));
+  }
+}
