@@ -36,7 +36,7 @@ type GameEffect = {
   kind: "bite" | "escape";
   label: "パク！" | "ヒューん！";
 };
-type TryEndReason = "parent-close" | "escape" | "poison-timeout";
+type TryEndReason = "parent-close" | "poison-close" | "escape" | "poison-timeout";
 type BiteAftermath = "fed" | "poisoned";
 type TryReplayEvent =
   | { kind: "play"; boxId: number }
@@ -989,7 +989,7 @@ function closeMouth(): void {
   if (!isMouthOpen || isGameOver || mouthFishMotion) return;
 
   const parent = getParent();
-  tryEndReason = "parent-close";
+  tryEndReason = activePoison ? "poison-close" : "parent-close";
   showMouthCloseEffect();
 
   if (activePoison) {
@@ -1462,7 +1462,7 @@ function resolveExpiredPoison(poisonBoxId: number): void {
   clearPoisonRemovalTimer();
   addLog(`毒魚を時間内に取り除けませんでした。${expiredPoison.ownerName} が10点を獲得し、親は0点です。`);
   finishTry();
-  startTryReplay();
+  startBiteAftermath("poisoned");
 }
 
 function updatePoisonCountdownDisplay(): void {
@@ -1992,8 +1992,8 @@ function render(): void {
                 <p class="section-label">親</p>
                 <h2>${renderPlayerIdentity(getParent())}</h2>
               </div>
-              <span class="mouth-state ${biteAftermath ? "is-after-bite" : isMouthOpen ? "is-open" : "is-closed"}">
-                ${biteAftermath ? "MUNCH!" : isMouthOpen ? "OPEN" : "CLOSED"}
+              <span class="mouth-state ${isMouthOpen ? "is-open" : "is-closed"}">
+                ${isMouthOpen ? "OPEN" : "CLOSED"}
               </span>
             </div>
             ${renderMouth()}
@@ -2441,7 +2441,8 @@ function renderTryReplayOverlay(): string {
   }
 
   const parentGain = getTryScoreGain(getParent());
-  const showWhale = tryEndReason === "parent-close";
+  const whaleIsPoisoned = tryEndReason === "poison-close" || tryEndReason === "poison-timeout";
+  const showWhale = tryEndReason === "parent-close" || whaleIsPoisoned;
   const scoreTargetIndex = orderedCards.length;
   const slotCount = orderedCards.length + (showWhale ? 1 : 0);
 
@@ -2541,9 +2542,9 @@ function renderTryReplayOverlay(): string {
           ${
             showWhale
               ? `
-                <div class="try-replay-whale" style="--motion-delay: ${schedule.finalAt}ms" aria-hidden="true">
+                <div class="try-replay-whale${whaleIsPoisoned ? " is-poisoned" : ""}" style="--motion-delay: ${schedule.finalAt}ms" aria-hidden="true">
                   <img class="try-replay-whale-open" src="./assets/mouth/whale-open.png" alt="">
-                  <img class="try-replay-whale-fed" src="./assets/mouth/whale-fed.png" alt="">
+                  <img class="try-replay-whale-fed" src="${whaleIsPoisoned ? "./assets/mouth/whale-poisoned.png" : "./assets/mouth/whale-fed.png"}" alt="">
                   <strong>パク！</strong>
                 </div>
               `
@@ -2944,6 +2945,10 @@ function renderTryEndMarker(): string {
     return '<div class="try-end-marker is-close" role="note"><strong>パク！</strong><span>ここで口を閉じた</span></div>';
   }
 
+  if (tryEndReason === "poison-close") {
+    return '<div class="try-end-marker is-poison" role="note"><strong>毒発動</strong><span>毒魚を食べてしまった</span></div>';
+  }
+
   if (tryEndReason === "poison-timeout") {
     return '<div class="try-end-marker is-poison" role="note"><strong>毒発動</strong><span>除去時間切れ</span></div>';
   }
@@ -3023,14 +3028,11 @@ function renderMouth(): string {
     : biteAftermath
       ? `is-closed is-after-bite is-${biteAftermath}`
       : "is-closed";
-  const aftermathMessage = biteAftermath === "poisoned"
-    ? "ごっくん…毒魚まで食べちゃった！"
-    : "もぐもぐ…ごっくん！";
-
   return `
     <div class="mouth ${mouthClass}">
       <img class="whale-face whale-face-closed" src="./assets/mouth/whale-front.png" alt="" aria-hidden="true">
       <img class="whale-face whale-face-fed" src="./assets/mouth/whale-fed.png" alt="" aria-hidden="true">
+      <img class="whale-face whale-face-poisoned" src="./assets/mouth/whale-poisoned.png" alt="" aria-hidden="true">
       <div class="jaw jaw-top" aria-hidden="true">
         <span></span><span></span><span></span><span></span><span></span>
       </div>
@@ -3048,7 +3050,7 @@ function renderMouth(): string {
       <div class="jaw jaw-bottom" aria-hidden="true">
         <span></span><span></span><span></span><span></span><span></span>
       </div>
-      ${biteAftermath ? `<div class="bite-aftermath-badge" role="status" aria-live="polite">${aftermathMessage}</div>` : ""}
+      ${biteAftermath === "poisoned" ? '<span class="visually-hidden" role="status" aria-live="polite" aria-atomic="true">親が毒魚を食べて苦しんでいます。</span>' : ""}
     </div>
   `;
 }
@@ -3489,7 +3491,8 @@ function getUsedPhysicalCardCount(player: Player): number {
 function getMouthStatusLabel(): string {
   if (isGameOver) return "ゲーム終了";
   if (isMouthOpen) return "開いている";
-  if (biteAftermath) return "食べている";
+  if (biteAftermath === "poisoned") return "毒魚を食べて苦しんでいる";
+  if (biteAftermath === "fed") return "閉じている";
   if (isTryEnded) return "トライ終了";
   return "閉じている";
 }

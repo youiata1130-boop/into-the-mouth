@@ -3301,7 +3301,8 @@ body {
 }
 
 .board-screen .mouth.is-closed:not(.is-after-bite) .whale-face-closed,
-.board-screen .mouth.is-after-bite .whale-face-fed {
+.board-screen .mouth.is-after-bite.is-fed .whale-face-fed,
+.board-screen .mouth.is-after-bite.is-poisoned .whale-face-poisoned {
   opacity: 1;
   transform: translate(-50%, -50%) scale(1);
 }
@@ -3362,70 +3363,28 @@ body {
   font-size: 2.5rem;
 }
 
-.mouth-state.is-after-bite {
-  background: #fff0c7;
-  color: #8a4a0c;
-}
-
-.bite-aftermath-badge {
-  position: absolute;
-  left: 50%;
-  bottom: 14px;
-  z-index: 7;
-  max-width: calc(100% - 24px);
-  padding: 8px 16px;
-  border: 2px solid rgba(255, 255, 255, 0.86);
-  border-radius: 999px;
-  background: rgba(21, 76, 91, 0.9);
-  box-shadow: 0 7px 18px rgba(11, 54, 66, 0.24);
-  color: #fff;
-  font-size: clamp(0.8rem, 2vw, 1rem);
-  font-weight: 1000;
-  letter-spacing: 0.03em;
-  text-align: center;
-  white-space: nowrap;
-  transform: translateX(-50%);
-  animation: aftermath-badge-in 280ms ease-out both;
-}
-
-.board-screen .mouth.is-after-bite .whale-face-fed {
-  animation: whale-chew 680ms ease-in-out 2;
-}
-
-.board-screen .mouth.is-poisoned .whale-face-fed {
+.board-screen .mouth.is-poisoned .whale-face-poisoned {
   filter:
-    drop-shadow(0 14px 18px rgba(10, 67, 88, 0.22))
-    saturate(0.82)
-    hue-rotate(12deg);
+    drop-shadow(0 14px 18px rgba(10, 67, 88, 0.24))
+    saturate(0.92);
+  animation: whale-poison-wobble 520ms ease-in-out 2;
 }
 
-@keyframes whale-chew {
+@keyframes whale-poison-wobble {
   0%,
   100% {
-    transform: translate(-50%, -50%) scale(1);
+    transform: translate(-50%, -50%) rotate(0) scale(1);
   }
-  35% {
-    transform: translate(-50%, -49%) scale(1.025, 0.975);
+  25% {
+    transform: translate(-50.8%, -50%) rotate(-1.2deg) scale(1.008);
   }
-  68% {
-    transform: translate(-50%, -50.5%) scale(0.99, 1.015);
-  }
-}
-
-@keyframes aftermath-badge-in {
-  from {
-    opacity: 0;
-    transform: translate(-50%, 8px) scale(0.94);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(-50%) scale(1);
+  75% {
+    transform: translate(-49.2%, -50%) rotate(1.2deg) scale(1.008);
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .board-screen .mouth.is-after-bite .whale-face-fed,
-  .bite-aftermath-badge {
+  .board-screen .mouth.is-poisoned .whale-face-poisoned {
     animation: none;
   }
 }
@@ -3464,9 +3423,6 @@ body {
     font-size: 2.15rem;
   }
 
-  .bite-aftermath-badge {
-    bottom: 8px;
-  }
 }
 
 /* Hand cards use an illustration with the value overlaid; no face copy. */
