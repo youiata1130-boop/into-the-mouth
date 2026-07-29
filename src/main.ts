@@ -6,7 +6,6 @@ import {
   CHILD_LABELS as childLabels,
   HUMAN_PLAYER_ID as humanPlayerId,
   MAX_TRIES_PER_PARENT as maxTriesPerParent,
-  POISON_REMOVAL_LIMIT_MS as poisonRemovalLimitMs,
   VISIBLE_CARD_COUNT as visibleCardCount
 } from "./game/config";
 import { canStackFishCards, createShuffledDeck, drawCard, stackFaceUpFishCards, useFaceUpCard } from "./game/deck";
@@ -37,7 +36,7 @@ type GameEffect = {
   kind: "bite" | "escape";
   label: "パク！" | "ヒューん！";
 };
-type TryEndReason = "parent-close" | "poison-close" | "escape" | "poison-timeout";
+type TryEndReason = "parent-close" | "poison-close" | "escape";
 type BiteAftermath = "fed" | "poisoned";
 type TryReplayEvent =
   | { kind: "play"; boxId: number }
@@ -104,7 +103,6 @@ type OnlineGameState = {
   cardPlayWaitingPlayerIds: string[];
   isGameOver: boolean;
   logEntries: string[];
-  poisonDeadlineAt: number | null;
   tryEndReason: TryEndReason | null;
   tryStartScores: Record<string, number>;
 };
@@ -164,9 +162,6 @@ let npcParentCloseAt: number | null = null;
 let mouthOpenedAt: number | null = null;
 let gameEffect: GameEffect | null = null;
 let gameEffectTimerId: number | null = null;
-let poisonDeadlineAt: number | null = null;
-let poisonResolutionTimerId: number | null = null;
-let poisonCountdownIntervalId: number | null = null;
 let tryEndReason: TryEndReason | null = null;
 let tryStartScores: Record<string, number> = {};
 let stackDragState: StackDragState | null = null;
@@ -575,7 +570,6 @@ function confirmPlayerCount(): void {
 function returnToTitle(): void {
   if (hasStarted && !confirmDiscardProgress()) return;
   clearNpcTimers();
-  clearPoisonRemovalTimer();
   clearBiteAftermath();
   clearTryReplay();
   clearMouthFishMotion();
@@ -934,7 +928,6 @@ function startParentRound(): void {
 
 function resetTryBox(): void {
   clearNpcTimers();
-  clearPoisonRemovalTimer();
   clearBiteAftermath();
   clearTryReplay();
   clearMouthFishMotion();
@@ -1009,7 +1002,6 @@ function closeMouth(): void {
     const poisonOwner = getPlayer(activePoison.ownerId);
     poisonOwner.score += 10;
     markPoisonResolved(activePoison.boxId, "triggered");
-    clearPoisonRemovalTimer();
     addLog(`${parent.name} が毒魚を残したまま閉じました。${activePoison.ownerName} が10点、親は0点です。`);
     activePoison = null;
     finishTry();
@@ -1026,7 +1018,6 @@ function closeMouth(): void {
 
 function finishTry(): void {
   clearNpcTimers();
-  clearPoisonRemovalTimer();
   clearMouthFishMotion();
   clearCardPlayWaits();
 
@@ -1077,15 +1068,9 @@ function advanceParent(): void {
 function removeActivePoison(): void {
   if (!isMouthOpen || !activePoison) return;
 
-  if (poisonDeadlineAt !== null && Date.now() >= poisonDeadlineAt) {
-    resolveExpiredPoison(activePoison.boxId);
-    return;
-  }
-
   const removedPoison = activePoison;
   markPoisonResolved(removedPoison.boxId, "removed");
   activePoison = null;
-  clearPoisonRemovalTimer();
   clearMouthFishMotion();
   addLog(`${getParent().name} が ${removedPoison.ownerName} の毒魚を取り除きました。通常どおり続行します。`);
   render();
@@ -1154,7 +1139,6 @@ function playFish(player: Player, slotIndex: number): void {
     fishBoxCard.poisonScoredById = activePoison.ownerId;
     fishBoxCard.poisonScoredByName = activePoison.ownerName;
     markPoisonResolved(activePoison.boxId, "triggered");
-    clearPoisonRemovalTimer();
     addLog(`${player.name} が${getFishCardLabel(card)}を出しました。${activePoison.ownerName} の毒魚が発動し、${activePoison.ownerName} が ${card.value} 点を確定しました。`);
     activePoison = null;
     startFishEntryMotion(fishBoxCard, liveBeforeIds, player.id);
@@ -1256,9 +1240,8 @@ function playPoison(player: Player, slotIndex: number): void {
     },
     player.id
   );
-  startPoisonRemovalTimer();
   const takeoverText = previousPoison ? `${previousPoison.ownerName} から得点の権利を奪いました。` : "";
-  addLog(`${player.name} が毒魚を入れました。${takeoverText}親は3秒以内に取り除く必要があります。`);
+  addLog(`${player.name} が毒魚を入れました。${takeoverText}親は毒魚が有効な間、時間制限なく取り除けます。`);
   render();
 }
 
@@ -1425,71 +1408,6 @@ function renderWinnerNotice(): string {
 
 function addLog(message: string): void {
   logEntries = [message, ...logEntries].slice(0, 14);
-}
-
-function startPoisonRemovalTimer(): void {
-  clearPoisonRemovalTimer();
-
-  if (!activePoison) return;
-
-  const poisonBoxId = activePoison.boxId;
-  poisonDeadlineAt = Date.now() + poisonRemovalLimitMs;
-  poisonResolutionTimerId = window.setTimeout(() => resolveExpiredPoison(poisonBoxId), poisonRemovalLimitMs);
-  poisonCountdownIntervalId = window.setInterval(updatePoisonCountdownDisplay, 100);
-}
-
-function clearPoisonRemovalTimer(): void {
-  if (poisonResolutionTimerId !== null) {
-    window.clearTimeout(poisonResolutionTimerId);
-    poisonResolutionTimerId = null;
-  }
-
-  if (poisonCountdownIntervalId !== null) {
-    window.clearInterval(poisonCountdownIntervalId);
-    poisonCountdownIntervalId = null;
-  }
-
-  poisonDeadlineAt = null;
-}
-
-function resolveExpiredPoison(poisonBoxId: number): void {
-  if (activePoison?.boxId !== poisonBoxId) return;
-
-  if (!isMouthOpen || isTryEnded || isGameOver) {
-    clearPoisonRemovalTimer();
-    return;
-  }
-
-  const remainingMs = (poisonDeadlineAt ?? 0) - Date.now();
-
-  if (remainingMs > 0) {
-    poisonResolutionTimerId = window.setTimeout(() => resolveExpiredPoison(poisonBoxId), remainingMs);
-    return;
-  }
-
-  const expiredPoison = activePoison;
-  getPlayer(expiredPoison.ownerId).score += 10;
-  markPoisonResolved(expiredPoison.boxId, "triggered");
-  activePoison = null;
-  tryEndReason = "poison-timeout";
-  clearPoisonRemovalTimer();
-  addLog(`毒魚を時間内に取り除けませんでした。${expiredPoison.ownerName} が10点を獲得し、親は0点です。`);
-  finishTry();
-  startBiteAftermath("poisoned");
-}
-
-function updatePoisonCountdownDisplay(): void {
-  const label = getPoisonCountdownLabel();
-  document.querySelectorAll<HTMLElement>("[data-poison-countdown]").forEach((element) => {
-    element.textContent = label;
-  });
-}
-
-function getPoisonCountdownLabel(): string {
-  if (poisonDeadlineAt === null) return "";
-
-  const remainingSeconds = Math.max(0, poisonDeadlineAt - Date.now()) / 1000;
-  return `除去まで ${remainingSeconds.toFixed(1)}秒`;
 }
 
 function scheduleNpcAutomation(): void {
@@ -1930,7 +1848,6 @@ function getOnlineState(): OnlineGameState {
     cardPlayWaitingPlayerIds: [...cardPlayWaitingPlayerIds],
     isGameOver,
     logEntries,
-    poisonDeadlineAt,
     tryEndReason,
     tryStartScores
   };
@@ -1960,7 +1877,6 @@ function applyOnlineState(state: OnlineGameState): void {
   applyCardPlayWaitingPlayers(state.cardPlayWaitingPlayerIds ?? []);
   isGameOver = state.isGameOver;
   logEntries = state.logEntries;
-  poisonDeadlineAt = state.poisonDeadlineAt;
   tryEndReason = state.tryEndReason;
   tryStartScores = state.tryStartScores;
   hasStarted = true;
@@ -2330,7 +2246,7 @@ function renderRulesSummary(): string {
           <li>親1人につき必ず3トライ行い、その後に親を交代します。</li>
           <li>山札と公開札はトライ間で引き継ぎ、親交代時に補給します。</li>
           <li>魚を出すと直前から逆順に比べ、大きい魚が小さい魚を食べます。先に大きい魚がいた場合は、後から出した小さい魚が食べられます。</li>
-          <li>同じ数字では捕食が止まります。食べられた魚が抱えていた魚も、まとめて大きい魚へ引き継がれます。</li>
+          <li>同じ強さでは後から出した魚が先の魚を食べます。食べられた魚が抱えていた魚も、まとめて捕食した魚へ引き継がれます。</li>
           <li>口の中は固定画面で、数字が小さい魚ほど小さく、大きい魚ほど大きく表示されます。</li>
           <li>魚は数字に関係なく出せます。</li>
           <li>口が開いている間、同じ2同士または3同士を2枚重ねると、2匹の群れになります。強さはカードの合計です。</li>
@@ -2349,7 +2265,7 @@ function renderRulesSummary(): string {
           <li>自分の毒魚に続けて出した魚も、効果も得点価値も持ちません。</li>
           <li>毒魚の後に毒魚が出ると、得点の権利は後の子へ移ります。</li>
           <li>毒魚があっても、権利を持つ子は逃げられます。</li>
-          <li>毒魚を3秒以内に除去できない場合、毒魚の子が10点を得てトライ終了です。</li>
+          <li>親は口が開いていて毒魚が有効な間、時間制限なく除去できます。</li>
           <li>山札と公開札を使い切った子は行動できません。</li>
         </ul>
       </div>
@@ -2460,7 +2376,7 @@ function renderTryReplayOverlay(): string {
   }
 
   const parentGain = getTryScoreGain(getParent());
-  const whaleIsPoisoned = tryEndReason === "poison-close" || tryEndReason === "poison-timeout";
+  const whaleIsPoisoned = tryEndReason === "poison-close";
   const showWhale = tryEndReason === "parent-close" || whaleIsPoisoned;
   const scoreTargetIndex = orderedCards.length;
   const slotCount = orderedCards.length + (showWhale ? 1 : 0);
@@ -2708,8 +2624,6 @@ function buildTryReplayEvents(): TryReplayEvent[] {
       if (!targetState || targetState.consumedById !== null) continue;
       if (target.type === "fish" && target.invalidatedByOwnPoison) continue;
       if (target.type === "fish" && target.poisonScoredById) break;
-      if (target.value === card.value) break;
-
       if (target.value > card.value) {
         const bundleIds = [card.boxId, ...newFishState.capturedIds];
         events.push({
@@ -2968,10 +2882,6 @@ function renderTryEndMarker(): string {
     return '<div class="try-end-marker is-poison" role="note"><strong>毒発動</strong><span>毒魚を食べてしまった</span></div>';
   }
 
-  if (tryEndReason === "poison-timeout") {
-    return '<div class="try-end-marker is-poison" role="note"><strong>毒発動</strong><span>除去時間切れ</span></div>';
-  }
-
   return "";
 }
 
@@ -3064,7 +2974,6 @@ function renderMouth(): string {
       <div class="cavity-meta">
         <span>泳いでいる魚 ${liveFishCount}匹</span>
         <span>${activePoison ? `毒魚: ${activePoison.ownerName}` : "毒魚なし"}</span>
-        ${activePoison ? `<small class="poison-countdown" data-poison-countdown>${getPoisonCountdownLabel()}</small>` : ""}
       </div>
       <div class="jaw jaw-bottom" aria-hidden="true">
         <span></span><span></span><span></span><span></span><span></span>
@@ -3339,7 +3248,7 @@ function renderPoisonStatus(): string {
   const content = activePoison
     ? `
       <p class="poison-live">${activePoison.ownerName} の毒魚が有効です。</p>
-      <p>親は3秒以内に取り除く必要があります。間に合わない場合、${activePoison.ownerName} に10点が入ります。</p>
+      <p>親は毒魚が有効な間、時間制限なく取り除けます。残したまま口を閉じると、${activePoison.ownerName} に10点が入ります。</p>
     `
     : "<p>有効な毒魚はありません。発動済みの毒魚は無効として箱に残ります。</p>";
 

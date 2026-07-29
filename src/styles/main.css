@@ -873,15 +873,6 @@ select {
   font-weight: 900;
 }
 
-.poison-countdown {
-  margin-left: auto;
-  color: rgba(255, 255, 255, 0.72);
-  font-size: 0.62rem;
-  font-weight: 600;
-  letter-spacing: 0;
-  white-space: nowrap;
-}
-
 .box-stack {
   display: flex;
   flex-wrap: nowrap;

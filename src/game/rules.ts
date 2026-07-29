@@ -20,8 +20,6 @@ export function resolvePredation(boxCards: BoxCard[], newFish: FishBoxCard): num
     if (!isNumericBoxCard(target) || target.consumedById !== null) continue;
     if (target.type === "fish" && target.invalidatedByOwnPoison) continue;
     if (target.type === "fish" && target.poisonScoredById) break;
-    if (target.value === newFish.value) break;
-
     if (target.type === "fish" && target.value > newFish.value) {
       const swallowedIds = [newFish.boxId, ...capturedIds];
 
@@ -94,8 +92,6 @@ export function estimateFishCaptureValue(boxCards: BoxCard[], value: FishValue, 
     if (target.type === "fish" && target.invalidatedByOwnPoison) continue;
     if (target.type === "fish" && target.poisonScoredById) break;
     if (target.value > value) return 0;
-    if (target.value === value) break;
-
     if (target.ownerId !== scoringPlayerId) total += target.value;
 
     if (target.type === "fish") {
