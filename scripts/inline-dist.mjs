@@ -49,10 +49,10 @@ async function inlineModuleScript(source) {
       const assetPath = resolve(distDir, src);
       const js = await readFile(assetPath, "utf8");
       inlinedAssetPaths.push(assetPath);
-      const script = `<script>\n${js.replaceAll("</script", "<\\/script")}\n</script>`;
+      const script = `<script type="module">\n${js.replaceAll("</script", "<\\/script")}\n</script>`;
       return {
         inline: "",
-        afterReplace: (nextSource) => nextSource.replace("</body>", `    ${script}\n  </body>`)
+        afterReplace: (nextSource) => nextSource.replace("</body>", () => `    ${script}\n  </body>`)
       };
     }
   );
@@ -68,8 +68,8 @@ async function replaceAsync(source, pattern, replacer) {
   const replacement = await replacer(match[0], ...Object.values(match.groups));
 
   if (typeof replacement === "string") {
-    return source.replace(pattern, replacement);
+    return source.replace(pattern, () => replacement);
   }
 
-  return replacement.afterReplace(source.replace(pattern, replacement.inline));
+  return replacement.afterReplace(source.replace(pattern, () => replacement.inline));
 }
