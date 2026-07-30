@@ -60,7 +60,7 @@ type MouthFishMotion = {
   predatorId: number | null;
   preyIds: number[];
 };
-type GameMode = "pvp" | "cpu" | "online";
+type GameMode = "cpu" | "online";
 type OnlineRole = "none" | "host" | "guest";
 type OnlineLobbyView = "choice" | "create" | "join";
 type CpuDifficulty = "easy" | "normal" | "hard";
@@ -300,7 +300,6 @@ const simpleActions: Record<string, () => void> = {
   "tutorial-close-mouth": closeTutorialMouth,
   "tutorial-remove-poison": removeTutorialPoison,
   "close-tutorial": closeTutorial,
-  "start-pvp": () => openModeSetup("pvp"),
   "start-cpu": () => openModeSetup("cpu"),
   "back-to-title": returnToTitle,
   "open-online-lobby": openOnlineLobby,
@@ -1807,17 +1806,15 @@ function getNpcEscapeSlot(player: Player): number | null {
 }
 
 function getNpcChildren(): Player[] {
-  if (gameMode === "pvp") return [];
   if (gameMode === "online") return getChildren().filter((player) => !onlineHumanPlayerIds.has(player.id));
   return getChildren().filter((player) => player.id !== localPlayerId);
 }
 
 function isHumanParent(): boolean {
-  return gameMode === "pvp" || getParent().id === localPlayerId;
+  return getParent().id === localPlayerId;
 }
 
 function isNpcParent(): boolean {
-  if (gameMode === "pvp") return false;
   if (gameMode === "online") return !onlineHumanPlayerIds.has(getParent().id);
   return getParent().id !== localPlayerId;
 }
@@ -2193,7 +2190,6 @@ function render(): void {
 
 function renderPlayerCountScreen(): string {
   const modeLabels: Record<GameMode, string> = {
-    pvp: "プレイヤーと対戦",
     cpu: "CPUと対戦",
     online: "友達とオンライン対戦"
   };
@@ -2204,7 +2200,7 @@ function renderPlayerCountScreen(): string {
         <h1 id="count-title">人数を選択</h1>
         <p class="start-lead">3〜6人から、今回のゲームに参加する人数を選んでください。</p>
         ${renderPlayerCountOptions()}
-        ${pendingGameMode === "pvp" ? "" : renderCpuDifficultyOptions()}
+        ${renderCpuDifficultyOptions()}
         <button class="primary-button count-confirm" type="button" data-action="confirm-player-count">${draftPlayerCount}人で進む</button>
         <button class="text-button back-title" type="button" data-action="back-to-title">モード選択へ戻る</button>
       </section>
@@ -2247,11 +2243,6 @@ function renderStartScreen(): string {
         <h1 id="game-title">口に入る</h1>
         <p class="start-lead">魚を食べるか、毒を仕掛けるか。相手の動きを読んで最高得点を目指そう。</p>
         <div class="mode-grid" aria-label="対戦モードを選択">
-          <button class="mode-card mode-card-player" type="button" data-action="start-pvp">
-            <span class="mode-icon" aria-hidden="true">対</span>
-            <strong>プレイヤーと対戦</strong>
-            <small>1台の端末を囲んで、みんなで遊ぶ</small>
-          </button>
           <button class="mode-card mode-card-cpu" type="button" data-action="start-cpu">
             <span class="mode-icon" aria-hidden="true">CPU</span>
             <strong>CPUと対戦</strong>
@@ -3903,7 +3894,7 @@ function renderHandSlot(player: Player, card: PlayerCard | null, slotIndex: numb
 
   const isWaitingAfterOwnPlay = isPlayerWaitingAfterOwnAction(player.id);
   const canUse =
-    (gameMode === "pvp" || player.id === localPlayerId) &&
+    player.id === localPlayerId &&
     player.role === "child" &&
     isMouthOpen &&
     !isGameOver &&
