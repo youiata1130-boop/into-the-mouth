@@ -111,7 +111,8 @@ type OnlineGameState = {
   biteAftermath: BiteAftermath | null;
   isTryReplayActive: boolean;
   mouthFishMotion: MouthFishMotion | null;
-  cardPlayWaitingPlayerIds: string[];
+  actionWaitingPlayerIds?: string[];
+  cardPlayWaitingPlayerIds?: string[];
   isGameOver: boolean;
   logEntries: string[];
   tryEndReason: TryEndReason | null;
@@ -121,6 +122,8 @@ type OnlineGameState = {
 const appRoot = getAppRoot();
 const biteAftermathDurationMs = 1500;
 const mouthFishMotionDurationMs = 900;
+const ownActionWaitExtensionMs = 300;
+const ownActionWaitDurationMs = mouthFishMotionDurationMs + ownActionWaitExtensionMs;
 const tutorialSteps: readonly TutorialStep[] = [
   {
     chapter: "子の冒険",
@@ -269,8 +272,8 @@ let isTryReplayActive = false;
 let tryReplayTimerId: number | null = null;
 let mouthFishMotion: MouthFishMotion | null = null;
 let mouthFishMotionTimerId: number | null = null;
-let cardPlayWaitingPlayerIds = new Set<string>();
-let cardPlayWaitTimerIds = new Map<string, number>();
+let actionWaitingPlayerIds = new Set<string>();
+let actionWaitTimerIds = new Map<string, number>();
 let isGameOver = false;
 let logEntries: string[] = [];
 let npcChildTimerId: number | null = null;
@@ -369,8 +372,13 @@ appRoot.addEventListener("click", (event) => {
       playerId: button.dataset.playerId,
       slotIndex: Number(button.dataset.slotIndex)
     });
-    if (action === "play-card" && button.dataset.playerId) {
-      startCardPlayWait(button.dataset.playerId, mouthFishMotionDurationMs);
+    const waitingPlayerId = action === "play-card"
+      ? button.dataset.playerId
+      : action === "open-mouth" || action === "remove-poison"
+        ? localPlayerId
+        : undefined;
+    if (waitingPlayerId) {
+      startOwnActionWait(waitingPlayerId, ownActionWaitDurationMs);
       render();
     }
     return;
@@ -652,7 +660,7 @@ function stackCardsIntoSchool(
   expectedSourceCardId?: number,
   expectedTargetCardId?: number
 ): void {
-  if (isPlayerWaitingAfterCardPlay(playerId)) return;
+  if (isPlayerWaitingAfterOwnAction(playerId)) return;
 
   const player = getPlayer(playerId);
   if (player.role !== "child" || !isMouthOpen || isTryEnded || isGameOver) return;
@@ -715,7 +723,7 @@ function returnToTitle(): void {
   clearBiteAftermath();
   clearTryReplay();
   clearMouthFishMotion();
-  clearCardPlayWaits();
+  clearOwnActionWaits();
   destroyOnlineSession();
   hasStarted = false;
   onlineLobbyOpen = false;
@@ -1005,7 +1013,7 @@ function destroyOnlineSession(): void {
   const connectionsToGuests = guestConnections;
   const peerToDestroy = onlinePeer;
 
-  clearCardPlayWaits();
+  clearOwnActionWaits();
   hostConnection = null;
   guestConnections = [];
   connectionPlayerIds.clear();
@@ -1073,7 +1081,7 @@ function resetTryBox(): void {
   clearBiteAftermath();
   clearTryReplay();
   clearMouthFishMotion();
-  clearCardPlayWaits();
+  clearOwnActionWaits();
   nextSequence = 1;
   boxCards = [createBaitBoxCard()];
   tryStartScores = Object.fromEntries(players.map((player) => [player.id, player.score]));
@@ -1124,19 +1132,21 @@ function createBaitBoxCard(): BaitBoxCard {
 
 
 function openMouth(): void {
-  if (isGameOver || isMouthOpen || isTryEnded) return;
+  const parent = getParent();
+  if (isGameOver || isMouthOpen || isTryEnded || isPlayerWaitingAfterOwnAction(parent.id)) return;
 
   isMouthOpen = true;
   npcParentCloseAt = null;
   mouthOpenedAt = Date.now();
-  addLog(`${getParent().name} が口を開けました。カードは押した順に処理します。`);
+  startOwnActionWait(parent.id, ownActionWaitDurationMs);
+  addLog(`${parent.name} が口を開けました。カードは押した順に処理します。`);
   render();
 }
 
 function closeMouth(): void {
-  if (!isMouthOpen || isGameOver || mouthFishMotion) return;
-
   const parent = getParent();
+  if (!isMouthOpen || isGameOver || isPlayerWaitingAfterOwnAction(parent.id)) return;
+
   tryEndReason = activePoison ? "poison-close" : "parent-close";
   showMouthCloseEffect();
 
@@ -1161,7 +1171,7 @@ function closeMouth(): void {
 function finishTry(): void {
   clearNpcTimers();
   clearMouthFishMotion();
-  clearCardPlayWaits();
+  clearOwnActionWaits();
 
   if (activePoison) {
     markPoisonResolved(activePoison.boxId, "cancelled");
@@ -1208,18 +1218,20 @@ function advanceParent(): void {
 }
 
 function removeActivePoison(): void {
-  if (!isMouthOpen || !activePoison) return;
+  const parent = getParent();
+  if (!isMouthOpen || !activePoison || isPlayerWaitingAfterOwnAction(parent.id)) return;
 
   const removedPoison = activePoison;
   markPoisonResolved(removedPoison.boxId, "removed");
   activePoison = null;
   clearMouthFishMotion();
-  addLog(`${getParent().name} が ${removedPoison.ownerName} の毒魚を取り除きました。通常どおり続行します。`);
+  startOwnActionWait(parent.id, ownActionWaitDurationMs);
+  addLog(`${parent.name} が ${removedPoison.ownerName} の毒魚を取り除きました。通常どおり続行します。`);
   render();
 }
 
 function playCard(playerId: string, slotIndex: number): void {
-  if (isPlayerWaitingAfterCardPlay(playerId)) return;
+  if (isPlayerWaitingAfterOwnAction(playerId)) return;
 
   const player = getPlayer(playerId);
   const card = player.faceUp[slotIndex];
@@ -1388,7 +1400,7 @@ function playPoison(player: Player, slotIndex: number): void {
 }
 
 function escapeWithCard(playerId: string, slotIndex: number): void {
-  if (isPlayerWaitingAfterCardPlay(playerId)) return;
+  if (isPlayerWaitingAfterOwnAction(playerId)) return;
 
   const player = getPlayer(playerId);
 
@@ -1573,7 +1585,7 @@ function scheduleNpcAutomation(): void {
     return;
   }
 
-  if (!mouthFishMotion) scheduleNpcParentAction();
+  scheduleNpcParentAction();
   scheduleNpcChildAction();
 }
 
@@ -1591,6 +1603,7 @@ function clearNpcTimers(): void {
 
 function scheduleNpcParentAction(): void {
   if (!isNpcParent() || !isMouthOpen || isTryEnded || isGameOver) return;
+  if (isPlayerWaitingAfterOwnAction(getParent().id)) return;
 
   if (activePoison) {
     npcParentTimerId = window.setTimeout(() => {
@@ -1629,7 +1642,7 @@ function scheduleNpcParentAction(): void {
 
 function scheduleNpcChildAction(): void {
   const npcChildren = getNpcChildren().filter(
-    (player) => player.faceUp.some(Boolean) && !isPlayerWaitingAfterCardPlay(player.id)
+    (player) => player.faceUp.some(Boolean) && !isPlayerWaitingAfterOwnAction(player.id)
   );
 
   if (npcChildren.length === 0) return;
@@ -1839,7 +1852,7 @@ function startMouthFishMotion(motion: MouthFishMotion, playerId: string): void {
 
   const duration = mouthFishMotionDurationMs + Math.max(0, motion.preyIds.length - 1) * 70;
   if (prefersReducedMotion() && gameMode !== "online") {
-    startCardPlayWait(playerId, duration);
+    startOwnActionWait(playerId, duration + ownActionWaitExtensionMs);
     return;
   }
 
@@ -1849,7 +1862,7 @@ function startMouthFishMotion(motion: MouthFishMotion, playerId: string): void {
     mouthFishMotionTimerId = null;
     render();
   }, duration);
-  startCardPlayWait(playerId, duration);
+  startOwnActionWait(playerId, duration + ownActionWaitExtensionMs);
 }
 
 function clearMouthFishMotion(): void {
@@ -1861,36 +1874,36 @@ function clearMouthFishMotion(): void {
   mouthFishMotion = null;
 }
 
-function isPlayerWaitingAfterCardPlay(playerId: string): boolean {
-  return cardPlayWaitingPlayerIds.has(playerId);
+function isPlayerWaitingAfterOwnAction(playerId: string): boolean {
+  return actionWaitingPlayerIds.has(playerId);
 }
 
-function startCardPlayWait(playerId: string, durationMs: number): void {
-  const existingTimerId = cardPlayWaitTimerIds.get(playerId);
+function startOwnActionWait(playerId: string, durationMs: number): void {
+  const existingTimerId = actionWaitTimerIds.get(playerId);
   if (existingTimerId !== undefined) window.clearTimeout(existingTimerId);
 
-  cardPlayWaitingPlayerIds.add(playerId);
+  actionWaitingPlayerIds.add(playerId);
   const timerId = window.setTimeout(() => {
-    cardPlayWaitTimerIds.delete(playerId);
-    cardPlayWaitingPlayerIds.delete(playerId);
+    actionWaitTimerIds.delete(playerId);
+    actionWaitingPlayerIds.delete(playerId);
     render();
   }, durationMs);
-  cardPlayWaitTimerIds.set(playerId, timerId);
+  actionWaitTimerIds.set(playerId, timerId);
 }
 
-function clearCardPlayWaits(): void {
-  cardPlayWaitTimerIds.forEach((timerId) => window.clearTimeout(timerId));
-  cardPlayWaitTimerIds.clear();
-  cardPlayWaitingPlayerIds.clear();
+function clearOwnActionWaits(): void {
+  actionWaitTimerIds.forEach((timerId) => window.clearTimeout(timerId));
+  actionWaitTimerIds.clear();
+  actionWaitingPlayerIds.clear();
 }
 
-function applyCardPlayWaitingPlayers(playerIds: string[]): void {
+function applyOwnActionWaitingPlayers(playerIds: string[]): void {
   const synchronizedPlayerIds = new Set(playerIds);
 
-  cardPlayWaitTimerIds.forEach((timerId, playerId) => {
+  actionWaitTimerIds.forEach((timerId, playerId) => {
     if (synchronizedPlayerIds.has(playerId)) {
       window.clearTimeout(timerId);
-      cardPlayWaitTimerIds.delete(playerId);
+      actionWaitTimerIds.delete(playerId);
     } else {
       // Keep a guest's just-sent action locked until the host acknowledges it
       // or the short optimistic wait expires.
@@ -1898,7 +1911,7 @@ function applyCardPlayWaitingPlayers(playerIds: string[]): void {
     }
   });
 
-  cardPlayWaitingPlayerIds = synchronizedPlayerIds;
+  actionWaitingPlayerIds = synchronizedPlayerIds;
 }
 
 function startTryReplay(): void {
@@ -1987,7 +2000,8 @@ function getOnlineState(): OnlineGameState {
     biteAftermath,
     isTryReplayActive,
     mouthFishMotion,
-    cardPlayWaitingPlayerIds: [...cardPlayWaitingPlayerIds],
+    actionWaitingPlayerIds: [...actionWaitingPlayerIds],
+    cardPlayWaitingPlayerIds: [...actionWaitingPlayerIds],
     isGameOver,
     logEntries,
     tryEndReason,
@@ -2016,7 +2030,7 @@ function applyOnlineState(state: OnlineGameState): void {
   isTryReplayActive = Boolean(state.isTryReplayActive && !prefersReducedMotion());
   clearMouthFishMotion();
   mouthFishMotion = state.mouthFishMotion ?? null;
-  applyCardPlayWaitingPlayers(state.cardPlayWaitingPlayerIds ?? []);
+  applyOwnActionWaitingPlayers(state.actionWaitingPlayerIds ?? state.cardPlayWaitingPlayerIds ?? []);
   isGameOver = state.isGameOver;
   logEntries = state.logEntries;
   tryEndReason = state.tryEndReason;
@@ -2790,6 +2804,7 @@ function renderRulesSummary(): string {
           <li>同じ強さでは後から出した魚が先の魚を食べます。食べられた魚が抱えていた魚も、まとめて捕食した魚へ引き継がれます。</li>
           <li>口の中は固定画面で、数字が小さい魚ほど小さく、大きい魚ほど大きく表示されます。</li>
           <li>魚は数字に関係なく出せます。</li>
+          <li>魚を出した子、口を開けた親、毒魚を取り除いた親だけ約1.2秒待ちます。ほかのプレイヤーはすぐ行動できます。</li>
           <li>口が開いている間、同じ2同士または3同士を2枚重ねると、2匹の群れになります。強さはカードの合計です。</li>
           <li>2匹の群れには、さらに同じ種類を1枚追加でき、3匹の群れになります。強さは2の群れなら6、3の群れなら9です。完成した群れは1枚の魚として出し、分けることはできません。</li>
           <li>群れを作って空いた公開枠には、山札があれば即座に1枚補充します。</li>
@@ -2855,26 +2870,29 @@ function renderParentOptions(): string {
 
 function renderParentControls(showRoundActions = true): string {
   const parentIsHuman = isHumanParent();
-  const canOpen = parentIsHuman && !isGameOver && !isMouthOpen && !isTryEnded;
-  const canClose = parentIsHuman && !isGameOver && isMouthOpen && !mouthFishMotion;
-  const canRemovePoison = parentIsHuman && !isGameOver && isMouthOpen && activePoison;
   const parent = getParent();
+  const parentIsWaitingAfterOwnAction = isPlayerWaitingAfterOwnAction(parent.id);
+  const canOpen = parentIsHuman && !isGameOver && !isMouthOpen && !isTryEnded && !parentIsWaitingAfterOwnAction;
+  const canClose = parentIsHuman && !isGameOver && isMouthOpen && !parentIsWaitingAfterOwnAction;
+  const canRemovePoison = parentIsHuman && !isGameOver && isMouthOpen && activePoison && !parentIsWaitingAfterOwnAction;
+  const waitTitle = "自分が行動した後の待ち時間です。少し待つと、また操作できます。";
 
   return `
-    <section class="panel-block parent-controls ${getPlayerToneClass(parent.id)}">
+    <section class="panel-block parent-controls${parentIsWaitingAfterOwnAction ? " is-action-waiting" : ""} ${getPlayerToneClass(parent.id)}"${parentIsWaitingAfterOwnAction ? ' aria-busy="true"' : ""}>
       <p class="section-label">${parentIsHuman ? "あなたが親" : "NPC親"}</p>
       <h2>${renderPlayerIdentity(parent)}</h2>
       <div class="parent-actions">
-        <button class="primary-button" type="button" data-action="open-mouth"${canOpen ? "" : " disabled"}>
+        <button class="primary-button" type="button" data-action="open-mouth"${canOpen ? "" : " disabled"}${parentIsWaitingAfterOwnAction ? ` title="${waitTitle}"` : ""}>
           口を開ける
         </button>
-        <button class="danger-button" type="button" data-action="close-mouth"${canClose ? "" : " disabled"}>
+        <button class="danger-button" type="button" data-action="close-mouth"${canClose ? "" : " disabled"}${parentIsWaitingAfterOwnAction ? ` title="${waitTitle}"` : ""}>
           口を閉じる
         </button>
       </div>
-      <button class="secondary-button wide" type="button" data-action="remove-poison"${canRemovePoison ? "" : " disabled"}>
+      <button class="secondary-button wide" type="button" data-action="remove-poison"${canRemovePoison ? "" : " disabled"}${parentIsWaitingAfterOwnAction ? ` title="${waitTitle}"` : ""}>
         毒魚を取り除く
       </button>
+      ${parentIsWaitingAfterOwnAction ? '<p class="microcopy action-wait-notice" role="status">行動後の待ち時間です。ほかのプレイヤーは操作できます。</p>' : ""}
       ${showRoundActions ? renderRoundActionButtons() : ""}
     </section>
   `;
@@ -3840,7 +3858,7 @@ function renderLog(): string {
 
 function renderChildPanel(player: Player, index: number, variant: "opponent" | "self" = "self"): string {
   const isSelf = variant === "self";
-  const isWaitingAfterOwnPlay = isPlayerWaitingAfterCardPlay(player.id);
+  const isWaitingAfterOwnPlay = isPlayerWaitingAfterOwnAction(player.id);
   const label = isSelf ? "あなたの子プレイヤー" : (childLabels[index] ?? `子${index + 1}`);
   const candidates = getPlayerCandidates(player.id);
   const latestCandidate = candidates.at(-1);
@@ -3883,7 +3901,7 @@ function renderHandSlot(player: Player, card: PlayerCard | null, slotIndex: numb
     return '<div class="hand-slot"><div class="play-card empty-card"><span>空</span></div></div>';
   }
 
-  const isWaitingAfterOwnPlay = isPlayerWaitingAfterCardPlay(player.id);
+  const isWaitingAfterOwnPlay = isPlayerWaitingAfterOwnAction(player.id);
   const canUse =
     (gameMode === "pvp" || player.id === localPlayerId) &&
     player.role === "child" &&
@@ -3891,7 +3909,7 @@ function renderHandSlot(player: Player, card: PlayerCard | null, slotIndex: numb
     !isGameOver &&
     !isWaitingAfterOwnPlay;
   const unavailableTitle = isWaitingAfterOwnPlay
-    ? "自分が出した魚の演出中です。少し待つと、また出せます。"
+    ? "自分がカードを出した後の待ち時間です。少し待つと、また出せます。"
     : "口が開いている間だけ使用できます。";
   const ownPoisonMakesFishIneffective = card.type === "fish" && activePoison?.ownerId === player.id;
   const fishLabel = card.type === "fish" ? getFishCardLabel(card) : "";
