@@ -64,6 +64,13 @@ type GameMode = "pvp" | "cpu" | "online";
 type OnlineRole = "none" | "host" | "guest";
 type OnlineLobbyView = "choice" | "create" | "join";
 type CpuDifficulty = "easy" | "normal" | "hard";
+type TutorialStep = {
+  kicker: string;
+  title: string;
+  summary: string;
+  points: readonly string[];
+  tip: string;
+};
 type NpcChildAction =
   | { type: "play" | "escape"; slotIndex: number }
   | { type: "stack"; sourceSlotIndex: number; targetSlotIndex: number };
@@ -110,6 +117,96 @@ type OnlineGameState = {
 const appRoot = getAppRoot();
 const biteAftermathDurationMs = 1500;
 const mouthFishMotionDurationMs = 900;
+const tutorialSteps: readonly TutorialStep[] = [
+  {
+    kicker: "ゴールと役割",
+    title: "親と子、両方で得点しよう",
+    summary: "3〜6人で遊び、全員が1回ずつ親を担当します。すべての親ラウンドが終わったとき、合計得点が最も高い人の勝ちです。",
+    points: [
+      "1人の親ラウンドは必ず3トライ。",
+      "親以外は全員「子」として魚を出します。",
+      "親のときも子のときも得点のチャンスがあります。"
+    ],
+    tip: "同点なら、同点のプレイヤー全員が勝利です。"
+  },
+  {
+    kicker: "カードの準備",
+    title: "子は11枚から3枚を公開",
+    summary: "各子は魚10枚と毒魚1枚を混ぜ、山札から3枚を表向きに並べます。使った公開枠は、山札があればすぐ補充します。",
+    points: [
+      "魚2×4、魚3×3、魚4×2、魚5×1、毒魚×1。",
+      "山札・公開カード・使用済みカードは3トライを通して引き継ぎます。",
+      "山札と公開カードを使い切ると、その親ラウンドでは行動終了です。"
+    ],
+    tip: "公開された3枚から、今いちばん有利なカードを選びます。"
+  },
+  {
+    kicker: "1トライの流れ",
+    title: "口が開いたら、子はリアルタイムで行動",
+    summary: "箱には最初に親の餌「1」が入ります。親が口を開けたら、子は順番を待たずにカードを出せます。",
+    points: [
+      "魚が入るたびに捕食を解決します。",
+      "親が口を閉じるか、子が逃げるとトライ終了。",
+      "カードは箱に入った順に公開して得点します。"
+    ],
+    tip: "現物の箱では、下にあるカードほど先に入ったカードです。"
+  },
+  {
+    kicker: "捕食",
+    title: "強い魚が食べる。同点は後出し勝ち",
+    summary: "新しい魚を出したら、直前のカードから逆向きに強さを比べます。強い魚が弱い魚を食べ、獲物もまとめて引き継ぎます。",
+    points: [
+      "先に強い魚がいる場所へ弱い魚を出すと、新しい魚が食べられます。",
+      "同じ強さなら、後から出した魚が先にいた魚を食べます。",
+      "有効な毒魚・成功した逃げるカードなどに当たると捕食は止まります。"
+    ],
+    tip: "例：魚3のあとに魚3を出すと、後から出した魚3が先の魚3を食べます。"
+  },
+  {
+    kicker: "魚群",
+    title: "同じ2・3を重ねて強くする",
+    summary: "公開中の同じ魚2、または同じ魚3を重ねると、2匹または3匹の群れを作れます。群れは1枚の魚として扱います。",
+    points: [
+      "魚2×2＝強さ4、魚2×3＝強さ6。",
+      "魚3×2＝強さ6、魚3×3＝強さ9。",
+      "3匹の群れは分けたり、もう一度重ねたりできません。"
+    ],
+    tip: "群れを作って空いた公開枠には、山札からすぐ1枚補充します。"
+  },
+  {
+    kicker: "逃げる",
+    title: "食べた分を確定得点にする",
+    summary: "自分の魚がほかの数字カードを食べていれば「逃げる権利」を持ちます。公開カード1枚を裏向きで箱へ入れると逃げられます。",
+    points: [
+      "得点は、その魚が食べた他人の数字カードの合計。",
+      "逃げる魚自身と、自分が出したカードは得点に含めません。",
+      "候補が複数なら、自分が最後に出した有効な魚が対象です。"
+    ],
+    tip: "逃げに成功した瞬間、そのトライは終了します。"
+  },
+  {
+    kicker: "毒魚",
+    title: "次の魚の得点を奪う",
+    summary: "毒魚は、別の子が次に出した魚1枚を毒魚の持ち主の確定得点にします。親は毒魚が有効な間、時間制限なく取り除けます。",
+    points: [
+      "毒魚を出した本人が続けて魚を出すと、その魚は無効。",
+      "別の毒魚が出ると、得点の権利は後の毒魚へ移ります。",
+      "毒魚を残したまま親が口を閉じると、毒魚の持ち主が10点、親は0点。"
+    ],
+    tip: "毒魚の除去に制限時間はありません。状況を見て親が判断します。"
+  },
+  {
+    kicker: "得点とゲーム終了",
+    title: "全員が親を終えたら勝者決定",
+    summary: "親は口を閉じたとき、口の中に残った他人の有効な数字カードを得点します。子は逃げる・毒魚で得点を確定します。",
+    points: [
+      "親自身の餌、毒魚、逃げるカードは親得点に含めません。",
+      "口を開けてすぐ閉じた場合、親は0点です。",
+      "全員の親ラウンド終了後、合計得点が最も高い人が勝利。"
+    ],
+    tip: "これで準備完了。最初はCPU対戦で流れを試すのがおすすめです。"
+  }
+] as const;
 
 let hasStarted = false;
 let gameMode: GameMode = "cpu";
@@ -167,8 +264,14 @@ let tryStartScores: Record<string, number> = {};
 let stackDragState: StackDragState | null = null;
 let suppressNextCardClick = false;
 let suppressClickTimerId: number | null = null;
+let tutorialStep: number | null = null;
+let tutorialReturnToRules = false;
 
 const simpleActions: Record<string, () => void> = {
+  "open-tutorial": openTutorial,
+  "tutorial-previous": showPreviousTutorialStep,
+  "tutorial-next": showNextTutorialStep,
+  "close-tutorial": closeTutorial,
   "start-pvp": () => openModeSetup("pvp"),
   "start-cpu": () => openModeSetup("cpu"),
   "back-to-title": returnToTitle,
@@ -333,6 +436,20 @@ appRoot.addEventListener("pointercancel", (event) => {
 });
 
 appRoot.addEventListener("keydown", (event) => {
+  if (tutorialStep !== null) {
+    if (event.key === "ArrowLeft") {
+      event.preventDefault();
+      showPreviousTutorialStep();
+    } else if (event.key === "ArrowRight") {
+      event.preventDefault();
+      showNextTutorialStep();
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      closeTutorial();
+    }
+    return;
+  }
+
   if (event.key.toLowerCase() !== "s") return;
   const target = event.target;
   if (!(target instanceof HTMLButtonElement)) return;
@@ -1887,6 +2004,12 @@ function applyOnlineState(state: OnlineGameState): void {
 function render(): void {
   cancelStackDrag();
 
+  if (tutorialStep !== null) {
+    appRoot.innerHTML = renderTutorialScreen();
+    appRoot.querySelector<HTMLElement>(".tutorial-card")?.focus({ preventScroll: true });
+    return;
+  }
+
   if (modeSetupOpen) {
     appRoot.innerHTML = renderPlayerCountScreen();
     return;
@@ -2098,8 +2221,287 @@ function renderStartScreen(): string {
             <small>部屋を作り、参加コードで別の端末と遊ぶ</small>
           </button>
         </div>
+        <button class="tutorial-entry" type="button" data-action="open-tutorial">
+          <span class="tutorial-entry-icon" aria-hidden="true">?</span>
+          <span>
+            <strong>遊び方を見る</strong>
+            <small>約2分で、捕食・魚群・逃げる・毒魚までわかります</small>
+          </span>
+        </button>
       </section>
     </main>
+  `;
+}
+
+function openTutorial(): void {
+  tutorialReturnToRules = appRoot.querySelector<HTMLDetailsElement>(".rules-panel")?.open ?? false;
+  clearNpcTimers();
+  tutorialStep = 0;
+  render();
+}
+
+function closeTutorial(): void {
+  const shouldRestoreRules = tutorialReturnToRules;
+  tutorialReturnToRules = false;
+  tutorialStep = null;
+  render();
+
+  const rulesPanel = appRoot.querySelector<HTMLDetailsElement>(".rules-panel");
+  if (shouldRestoreRules && rulesPanel) rulesPanel.open = true;
+
+  const tutorialButton = shouldRestoreRules
+    ? rulesPanel?.querySelector<HTMLButtonElement>('button[data-action="open-tutorial"]')
+    : appRoot.querySelector<HTMLButtonElement>('button[data-action="open-tutorial"]');
+  tutorialButton?.focus({ preventScroll: true });
+}
+
+function showPreviousTutorialStep(): void {
+  if (tutorialStep === null) return;
+  tutorialStep = Math.max(0, tutorialStep - 1);
+  render();
+}
+
+function showNextTutorialStep(): void {
+  if (tutorialStep === null) return;
+
+  if (tutorialStep >= tutorialSteps.length - 1) {
+    closeTutorial();
+    return;
+  }
+
+  tutorialStep += 1;
+  render();
+}
+
+function renderTutorialScreen(): string {
+  const stepIndex = tutorialStep ?? 0;
+  const step = tutorialSteps[stepIndex];
+  const isFirst = stepIndex === 0;
+  const isLast = stepIndex === tutorialSteps.length - 1;
+
+  return `
+    <main class="start-screen tutorial-screen">
+      <section
+        class="tutorial-card"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="tutorial-title"
+        aria-describedby="tutorial-summary"
+        tabindex="-1"
+      >
+        <header class="tutorial-header">
+          <div>
+            <p class="start-eyebrow">HOW TO PLAY</p>
+            <p class="tutorial-progress-label">STEP ${stepIndex + 1} / ${tutorialSteps.length}</p>
+          </div>
+          <button class="tutorial-close" type="button" data-action="close-tutorial" aria-label="チュートリアルを閉じる">×</button>
+        </header>
+
+        <div class="tutorial-progress" aria-hidden="true">
+          ${tutorialSteps.map((_, index) => `<span class="${index <= stepIndex ? "is-complete" : ""}${index === stepIndex ? " is-current" : ""}"></span>`).join("")}
+        </div>
+
+        <div class="tutorial-layout" aria-live="polite">
+          <section class="tutorial-copy">
+            <p class="tutorial-kicker">${step.kicker}</p>
+            <h1 id="tutorial-title">${step.title}</h1>
+            <p class="tutorial-summary" id="tutorial-summary">${step.summary}</p>
+            <ul>
+              ${step.points.map((point) => `<li>${point}</li>`).join("")}
+            </ul>
+            <p class="tutorial-tip"><strong>POINT</strong><span>${step.tip}</span></p>
+          </section>
+          <section class="tutorial-visual" aria-label="${step.kicker}の図解">
+            ${renderTutorialVisual(stepIndex)}
+          </section>
+        </div>
+
+        <footer class="tutorial-actions">
+          <button class="secondary-button" type="button" data-action="tutorial-previous" ${isFirst ? "disabled" : ""}>前へ</button>
+          <span class="tutorial-key-hint">← → キーでも移動できます</span>
+          <button class="primary-button" type="button" data-action="tutorial-next">${isLast ? "完了" : "次へ"}</button>
+        </footer>
+      </section>
+    </main>
+  `;
+}
+
+function renderTutorialVisual(stepIndex: number): string {
+  if (stepIndex === 0) {
+    return `
+      <div class="tutorial-role-scene">
+        <article class="tutorial-role is-parent">
+          <span>親</span>
+          <img src="${whaleArtPaths.open}" alt="">
+          <strong>口を閉じて得点</strong>
+        </article>
+        <span class="tutorial-versus" aria-hidden="true">×</span>
+        <article class="tutorial-role is-child">
+          <span>子</span>
+          <div class="tutorial-fish-row">
+            ${renderTutorialFish(2)}
+            ${renderTutorialFish(3)}
+            ${renderTutorialFish(4)}
+          </div>
+          <strong>魚を出して得点</strong>
+        </article>
+      </div>
+      <div class="tutorial-trophy">全員が親を1回ずつ → <strong>最高得点が勝ち</strong></div>
+    `;
+  }
+
+  if (stepIndex === 1) {
+    return `
+      <div class="tutorial-deck">
+        ${renderTutorialDeckCard(2, 4)}
+        ${renderTutorialDeckCard(3, 3)}
+        ${renderTutorialDeckCard(4, 2)}
+        ${renderTutorialDeckCard(5, 1)}
+        <article class="tutorial-deck-card is-poison">
+          <img src="${poisonFishArtPath}" alt="">
+          <strong>毒魚</strong>
+          <span>×1</span>
+        </article>
+      </div>
+      <div class="tutorial-open-cards">
+        <span class="tutorial-deck-back">山札</span>
+        <strong aria-hidden="true">→</strong>
+        <div>${renderTutorialFish(2)}${renderTutorialFish(4)}${renderTutorialFish(3)}</div>
+        <span>3枚公開</span>
+      </div>
+    `;
+  }
+
+  if (stepIndex === 2) {
+    return `
+      <div class="tutorial-flow">
+        <article><span>1</span><strong>餌「1」</strong><small>箱の最初に入れる</small></article>
+        <b aria-hidden="true">→</b>
+        <article><span>2</span><strong>口を開く</strong><small>子が行動開始</small></article>
+        <b aria-hidden="true">→</b>
+        <article><span>3</span><strong>魚を出す</strong><small>捕食を解決</small></article>
+        <b aria-hidden="true">→</b>
+        <article><span>4</span><strong>閉じる／逃げる</strong><small>得点して終了</small></article>
+      </div>
+      <div class="tutorial-mouth-demo">
+        <img src="${whaleArtPaths.open}" alt="">
+        <div class="tutorial-mouth-cards"><span>1</span>${renderTutorialFish(2)}${renderTutorialFish(4)}</div>
+      </div>
+    `;
+  }
+
+  if (stepIndex === 3) {
+    return `
+      <div class="tutorial-predation-examples">
+        <article>
+          <p>強さが違う</p>
+          <div>${renderTutorialFish(2)}<span>→</span>${renderTutorialFish(4)}</div>
+          <strong>魚4が魚2を食べる</strong>
+        </article>
+        <article class="is-equal">
+          <p>同じ強さ</p>
+          <div>${renderTutorialFish(3, "先")}<span>→</span>${renderTutorialFish(3, "後")}</div>
+          <strong>後から出した魚3が食べる</strong>
+        </article>
+      </div>
+    `;
+  }
+
+  if (stepIndex === 4) {
+    return `
+      <div class="tutorial-school-grid">
+        ${renderTutorialSchool(2, 2, 4)}
+        ${renderTutorialSchool(2, 3, 6)}
+        ${renderTutorialSchool(3, 2, 6)}
+        ${renderTutorialSchool(3, 3, 9)}
+      </div>
+    `;
+  }
+
+  if (stepIndex === 5) {
+    return `
+      <div class="tutorial-escape-scene">
+        <div class="tutorial-captured">
+          ${renderTutorialFish(4)}
+          <div><span class="tutorial-bait">1</span>${renderTutorialFish(2)}</div>
+          <small>魚4が餌1と魚2を食べた</small>
+        </div>
+        <span class="tutorial-escape-arrow" aria-hidden="true">→</span>
+        <div class="tutorial-escape-result">
+          <span class="tutorial-escape-card">逃</span>
+          <strong>3点を確定</strong>
+          <small>食べた他人の数字を合計</small>
+        </div>
+      </div>
+    `;
+  }
+
+  if (stepIndex === 6) {
+    return `
+      <div class="tutorial-poison-scene">
+        <article>
+          <img src="${poisonFishArtPath}" alt="">
+          <strong>毒魚を出す</strong>
+        </article>
+        <span aria-hidden="true">→</span>
+        <article>
+          ${renderTutorialFish(3)}
+          <strong>別の子の次の魚</strong>
+        </article>
+        <span aria-hidden="true">→</span>
+        <article class="is-score">
+          <b>3点</b>
+          <strong>毒魚の持ち主へ</strong>
+        </article>
+      </div>
+      <div class="tutorial-poison-choice">
+        <span>親が除去</span><strong>時間制限なし</strong>
+        <span>残して閉じる</span><strong>毒魚の子が10点</strong>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="tutorial-score-grid">
+      <article><span>親</span><strong>口の中の<br>他人の数字</strong></article>
+      <article><span>子</span><strong>逃げた魚が<br>食べた数字</strong></article>
+      <article><span>毒魚</span><strong>次の魚<br>または10点</strong></article>
+    </div>
+    <div class="tutorial-final">
+      <span aria-hidden="true">★</span>
+      <strong>全員が親を終えたら合計</strong>
+      <small>いちばん高い人が勝ち！</small>
+    </div>
+  `;
+}
+
+function renderTutorialFish(value: FishValue, badge = ""): string {
+  return `
+    <span class="tutorial-fish">
+      <img src="${fishArtPaths[value]}" alt="">
+      <b>${value}</b>
+      ${badge ? `<small>${badge}</small>` : ""}
+    </span>
+  `;
+}
+
+function renderTutorialDeckCard(value: FishValue, count: number): string {
+  return `
+    <article class="tutorial-deck-card">
+      <img src="${fishArtPaths[value]}" alt="">
+      <strong>魚${value}</strong>
+      <span>×${count}</span>
+    </article>
+  `;
+}
+
+function renderTutorialSchool(baseValue: 2 | 3, size: 2 | 3, strength: FishValue): string {
+  return `
+    <article class="tutorial-school">
+      <div>${Array.from({ length: size }, () => renderTutorialFish(baseValue)).join("")}</div>
+      <span aria-hidden="true">＝</span>
+      <strong>強さ${strength}</strong>
+    </article>
   `;
 }
 
@@ -2240,6 +2642,7 @@ function renderRulesSummary(): string {
   return `
     <details class="rules-panel compact-rules">
       <summary>ルール</summary>
+      <button class="tutorial-inline-button" type="button" data-action="open-tutorial">図解チュートリアルを見る</button>
       <div>
         <p class="section-label">進行と捕食</p>
         <ul>
