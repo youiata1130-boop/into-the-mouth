@@ -1,10 +1,11 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const rootDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const distDir = resolve(rootDir, "dist");
 const htmlPath = resolve(distDir, "index.html");
+const inlinedAssetPaths = [];
 
 let html = await readFile(htmlPath, "utf8");
 
@@ -12,6 +13,7 @@ html = await inlineStylesheet(html);
 html = await inlineModuleScript(html);
 
 await writeFile(htmlPath, html, "utf8");
+await Promise.all(inlinedAssetPaths.map((assetPath) => unlink(assetPath)));
 
 const serverDir = resolve(distDir, "server");
 await mkdir(serverDir, { recursive: true });
@@ -31,7 +33,9 @@ async function inlineStylesheet(source) {
     source,
     /<link rel="stylesheet" crossorigin href="(?<href>\.\/assets\/[^"]+\.css)">/,
     async (_match, href) => {
-      const css = await readFile(resolve(distDir, href), "utf8");
+      const assetPath = resolve(distDir, href);
+      const css = await readFile(assetPath, "utf8");
+      inlinedAssetPaths.push(assetPath);
       return `<style>\n${css}\n</style>`;
     }
   );
@@ -42,7 +46,9 @@ async function inlineModuleScript(source) {
     source,
     /<script type="module" crossorigin src="(?<src>\.\/assets\/[^"]+\.js)"><\/script>/,
     async (_match, src) => {
-      const js = await readFile(resolve(distDir, src), "utf8");
+      const assetPath = resolve(distDir, src);
+      const js = await readFile(assetPath, "utf8");
+      inlinedAssetPaths.push(assetPath);
       const script = `<script>\n${js.replaceAll("</script", "<\\/script")}\n</script>`;
       return {
         inline: "",

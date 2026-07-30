@@ -1,6 +1,11 @@
+# Dependencies
 /node_modules/
+
+# Generated builds and exports
 /dist/
 /site-package-stage/
 /artifacts/
 /output/
+
+# Local diagnostics
 *.log

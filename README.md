@@ -21,7 +21,7 @@ npm run dev
 
 `npm run build` を実行すると、`dist/index.html` に単体表示用のビルドも作成されます。
 
-## ソース構成
+## プロジェクト構成
 
 - `src/main.ts`: ゲーム進行、CPUスケジュール、画面描画の統括
 - `src/game/config.ts`: カード枚数などの設定
@@ -34,7 +34,12 @@ npm run dev
 - `src/styles/main.css`: 画面スタイルとアニメーション
 - `public/assets/creatures/`: 魚、タコ、毒魚などの画像
 - `public/assets/whale/`: 親の通常・開口・食後・毒魚リアクション画像
-- `scripts/`: ビルドや公開用の補助処理
+- `docs/rulebook/`: ルール説明書の元画像と生成手順
+- `scripts/`: ビルドとルール説明書生成の補助処理
+- `dist/`: Web版のビルド生成物（Git管理外・再生成可能）
+- `output/`: DOCX・PDFなどのローカル生成物（Git管理外）
+
+`dist/` は `npm run build` で作り直せます。`output/` には書き出した成果物が入るため、容量整理の際も必要なファイルを確認してから削除してください。
 
 ## 実装済みの主なルール
 
