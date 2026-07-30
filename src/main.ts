@@ -63,7 +63,21 @@ type MouthFishMotion = {
 type GameMode = "cpu" | "online";
 type OnlineRole = "none" | "host" | "guest";
 type OnlineLobbyView = "choice" | "create" | "join";
-type CpuDifficulty = "easy" | "normal" | "hard";
+type CpuDifficulty = "easy" | "normal" | "hard" | "expert";
+type CpuDelayKind = "open" | "poison" | "close" | "secure" | "child";
+type CpuTuning = {
+  escapeMultiplier: number;
+  mistakeChance: number;
+  unproductiveFishChance: number;
+  poisonTakeoverChance: number;
+  ownPoisonFishAvoidChance: number;
+  opponentPoisonFishAvoidChance: number;
+  poisonAccuracy: number;
+  randomPoisonChance: number;
+  poisonRemovalChance: number;
+  closeScore: number;
+  delays: Record<CpuDelayKind, readonly [number, number]>;
+};
 type TutorialAction = "play-fish-2" | "play-fish-4" | "close-mouth" | "remove-poison";
 type TutorialStep = {
   chapter: string;
@@ -118,6 +132,61 @@ type OnlineGameState = {
   tryEndReason: TryEndReason | null;
   tryStartScores: Record<string, number>;
 };
+
+const cpuTuning = {
+  easy: {
+    escapeMultiplier: 0.62,
+    mistakeChance: 0.44,
+    unproductiveFishChance: 0.2,
+    poisonTakeoverChance: 0.86,
+    ownPoisonFishAvoidChance: 0.96,
+    opponentPoisonFishAvoidChance: 0.9,
+    poisonAccuracy: 0.58,
+    randomPoisonChance: 0.12,
+    poisonRemovalChance: 0.48,
+    closeScore: 11,
+    delays: { open: [1400, 2400], poison: [1050, 1750], close: [7200, 11200], secure: [1800, 3000], child: [1800, 3400] }
+  },
+  normal: {
+    escapeMultiplier: 1,
+    mistakeChance: 0.14,
+    unproductiveFishChance: 0.06,
+    poisonTakeoverChance: 0.86,
+    ownPoisonFishAvoidChance: 0.96,
+    opponentPoisonFishAvoidChance: 0.9,
+    poisonAccuracy: 1,
+    randomPoisonChance: 0.05,
+    poisonRemovalChance: 0.78,
+    closeScore: 8,
+    delays: { open: [900, 1600], poison: [650, 1250], close: [5600, 9400], secure: [1100, 2100], child: [1100, 2600] }
+  },
+  hard: {
+    escapeMultiplier: 1.15,
+    mistakeChance: 0.03,
+    unproductiveFishChance: 0.01,
+    poisonTakeoverChance: 0.86,
+    ownPoisonFishAvoidChance: 0.96,
+    opponentPoisonFishAvoidChance: 0.9,
+    poisonAccuracy: 1.08,
+    randomPoisonChance: 0.02,
+    poisonRemovalChance: 0.94,
+    closeScore: 6,
+    delays: { open: [550, 1000], poison: [380, 750], close: [4400, 7600], secure: [650, 1250], child: [650, 1500] }
+  },
+  expert: {
+    escapeMultiplier: 1.25,
+    mistakeChance: 0,
+    unproductiveFishChance: 0,
+    poisonTakeoverChance: 1,
+    ownPoisonFishAvoidChance: 1,
+    opponentPoisonFishAvoidChance: 1,
+    poisonAccuracy: 1.2,
+    randomPoisonChance: 0,
+    poisonRemovalChance: 1,
+    closeScore: 5,
+    delays: { open: [350, 650], poison: [180, 320], close: [3200, 5600], secure: [260, 480], child: [320, 700] }
+  }
+} as const satisfies Record<CpuDifficulty, CpuTuning>;
 
 const appRoot = getAppRoot();
 const biteAftermathDurationMs = 1500;
@@ -277,8 +346,10 @@ let actionWaitTimerIds = new Map<string, number>();
 let isGameOver = false;
 let logEntries: string[] = [];
 let npcChildTimerId: number | null = null;
+let npcChildActAt: number | null = null;
 let npcParentTimerId: number | null = null;
 let npcParentCloseAt: number | null = null;
+let npcParentPoisonActAt: number | null = null;
 let mouthOpenedAt: number | null = null;
 let gameEffect: GameEffect | null = null;
 let gameEffectTimerId: number | null = null;
@@ -681,7 +752,7 @@ function stackCardsIntoSchool(
 }
 
 function setupNewGame(): void {
-  clearNpcTimers();
+  clearNpcTimers(true);
   clearGameEffect();
   playerCount = draftPlayerCount;
   parentIndex = draftParentIndex;
@@ -718,7 +789,7 @@ function confirmPlayerCount(): void {
 
 function returnToTitle(): void {
   if (hasStarted && !confirmDiscardProgress()) return;
-  clearNpcTimers();
+  clearNpcTimers(true);
   clearBiteAftermath();
   clearTryReplay();
   clearMouthFishMotion();
@@ -991,7 +1062,7 @@ function escapeHtml(value: string): string {
 }
 
 function isCpuDifficulty(value: unknown): value is CpuDifficulty {
-  return value === "easy" || value === "normal" || value === "hard";
+  return value === "easy" || value === "normal" || value === "hard" || value === "expert";
 }
 
 function updateOnlineLobbyMembers(): void {
@@ -1076,7 +1147,7 @@ function startParentRound(): void {
 }
 
 function resetTryBox(): void {
-  clearNpcTimers();
+  clearNpcTimers(true);
   clearBiteAftermath();
   clearTryReplay();
   clearMouthFishMotion();
@@ -1168,7 +1239,7 @@ function closeMouth(): void {
 }
 
 function finishTry(): void {
-  clearNpcTimers();
+  clearNpcTimers(true);
   clearMouthFishMotion();
   clearOwnActionWaits();
 
@@ -1588,7 +1659,7 @@ function scheduleNpcAutomation(): void {
   scheduleNpcChildAction();
 }
 
-function clearNpcTimers(): void {
+function clearNpcTimers(resetDeadlines = false): void {
   if (npcChildTimerId !== null) {
     window.clearTimeout(npcChildTimerId);
     npcChildTimerId = null;
@@ -1598,6 +1669,12 @@ function clearNpcTimers(): void {
     window.clearTimeout(npcParentTimerId);
     npcParentTimerId = null;
   }
+
+  if (resetDeadlines) {
+    npcChildActAt = null;
+    npcParentCloseAt = null;
+    npcParentPoisonActAt = null;
+  }
 }
 
 function scheduleNpcParentAction(): void {
@@ -1605,7 +1682,15 @@ function scheduleNpcParentAction(): void {
   if (isPlayerWaitingAfterOwnAction(getParent().id)) return;
 
   if (activePoison) {
+    if (cpuDifficulty === "expert" && npcParentPoisonActAt === null) {
+      npcParentPoisonActAt = Date.now() + getCpuDelay("poison");
+    }
+    const poisonActionDelay = cpuDifficulty === "expert" && npcParentPoisonActAt !== null
+      ? Math.max(40, npcParentPoisonActAt - Date.now())
+      : getCpuDelay("poison");
+
     npcParentTimerId = window.setTimeout(() => {
+      npcParentPoisonActAt = null;
       if (!isMouthOpen || isTryEnded || isGameOver || !isNpcParent() || !activePoison) return;
 
       if (Math.random() < getCpuPoisonRemovalChance()) {
@@ -1613,9 +1698,11 @@ function scheduleNpcParentAction(): void {
       } else {
         closeMouth();
       }
-    }, getCpuDelay("poison"));
+    }, poisonActionDelay);
     return;
   }
+
+  npcParentPoisonActAt = null;
 
   if (npcParentCloseAt === null) {
     npcParentCloseAt = Date.now() + getCpuDelay("close");
@@ -1623,7 +1710,7 @@ function scheduleNpcParentAction(): void {
 
   const availableScore = getParentCloseTotal();
 
-  if (availableScore >= getCpuCloseScore()) {
+  if (availableScore >= getCpuCloseScore() || shouldExpertParentSecure(availableScore)) {
     npcParentCloseAt = Math.min(npcParentCloseAt, Date.now() + getCpuDelay("secure"));
   }
 
@@ -1636,7 +1723,22 @@ function scheduleNpcParentAction(): void {
     }
 
     closeMouth();
-  }, Math.max(260, npcParentCloseAt - Date.now()));
+  }, Math.max(cpuDifficulty === "expert" ? 40 : 260, npcParentCloseAt - Date.now()));
+}
+
+function shouldExpertParentSecure(availableScore: number): boolean {
+  if (cpuDifficulty !== "expert" || availableScore <= 0) return false;
+
+  return getChildren().some((player) => {
+    const canAct = player.faceUp.some(Boolean);
+    if (!canAct) return false;
+
+    const canEscapeWithPoints = getPlayerCandidates(player.id).some(
+      (candidate) => sumCapturedIds(candidate.capturedIds, player.id) > 0
+    );
+    const canPlayPoison = player.faceUp.some((card) => card?.type === "poison");
+    return canEscapeWithPoints || canPlayPoison;
+  });
 }
 
 function scheduleNpcChildAction(): void {
@@ -1644,9 +1746,21 @@ function scheduleNpcChildAction(): void {
     (player) => player.faceUp.some(Boolean) && !isPlayerWaitingAfterOwnAction(player.id)
   );
 
-  if (npcChildren.length === 0) return;
+  if (npcChildren.length === 0) {
+    if (cpuDifficulty === "expert") npcChildActAt = null;
+    return;
+  }
+
+  if (cpuDifficulty === "expert" && npcChildActAt === null) {
+    npcChildActAt = Date.now() + getCpuDelay("child");
+  }
+
+  const actionDelay = cpuDifficulty === "expert" && npcChildActAt !== null
+    ? Math.max(80, npcChildActAt - Date.now())
+    : getCpuDelay("child");
 
   npcChildTimerId = window.setTimeout(() => {
+    npcChildActAt = null;
     if (!isMouthOpen || isTryEnded || isGameOver) return;
 
     for (const player of shuffle(npcChildren)) {
@@ -1666,10 +1780,13 @@ function scheduleNpcChildAction(): void {
     }
 
     scheduleNpcAutomation();
-  }, getCpuDelay("child"));
+  }, actionDelay);
 }
 
 function chooseNpcChildAction(player: Player): NpcChildAction | null {
+  if (cpuDifficulty === "expert") return chooseExpertNpcChildAction(player);
+
+  const tuning = cpuTuning[cpuDifficulty];
   const candidate = getPlayerCandidates(player.id).at(-1);
   const candidateTotal = candidate ? sumCapturedIds(candidate.capturedIds, player.id) : 0;
   const escapeSlot = getNpcEscapeSlot(player);
@@ -1678,8 +1795,7 @@ function chooseNpcChildAction(player: Player): NpcChildAction | null {
     const shouldSecureLargeSchool = candidate.value >= 6 && candidateTotal > 0;
     const escapeChance = shouldSecureLargeSchool ? 0.94 : candidateTotal >= 6 ? 0.82 : candidateTotal >= 3 ? 0.58 : 0.28;
 
-    const difficultyMultiplier = cpuDifficulty === "easy" ? 0.62 : cpuDifficulty === "hard" ? 1.15 : 1;
-    if (Math.random() < Math.min(0.98, escapeChance * difficultyMultiplier)) {
+    if (Math.random() < Math.min(0.98, escapeChance * tuning.escapeMultiplier)) {
       return { type: "escape", slotIndex: escapeSlot };
     }
   }
@@ -1692,7 +1808,7 @@ function chooseNpcChildAction(player: Player): NpcChildAction | null {
   if (poisonSlot >= 0) {
     const canTakePoisonRight = activePoison && activePoison.ownerId !== player.id;
 
-    if ((canTakePoisonRight && Math.random() < 0.86) || (!activePoison && shouldPlayPoisonNow())) {
+    if ((canTakePoisonRight && Math.random() < tuning.poisonTakeoverChance) || (!activePoison && shouldPlayPoisonNow())) {
       return { type: "play", slotIndex: poisonSlot };
     }
   }
@@ -1703,8 +1819,8 @@ function chooseNpcChildAction(player: Player): NpcChildAction | null {
 
   if (fishSlots.length > 0) {
     if (activePoison) {
-      const avoidUselessOwnFish = activePoison.ownerId === player.id && Math.random() < 0.96;
-      const avoidGivingPoisonPoints = activePoison.ownerId !== player.id && Math.random() < 0.9;
+      const avoidUselessOwnFish = activePoison.ownerId === player.id && Math.random() < tuning.ownPoisonFishAvoidChance;
+      const avoidGivingPoisonPoints = activePoison.ownerId !== player.id && Math.random() < tuning.opponentPoisonFishAvoidChance;
 
       if (avoidUselessOwnFish || avoidGivingPoisonPoints) return null;
 
@@ -1719,13 +1835,12 @@ function chooseNpcChildAction(player: Player): NpcChildAction | null {
 
     if (usefulFish.length > 0) {
       // 少しだけ判断を揺らし、毎回完全な最善手を即座に選ぶCPUにはしない。
-      const mistakeChance = cpuDifficulty === "easy" ? 0.44 : cpuDifficulty === "hard" ? 0.03 : 0.14;
-      const choice = usefulFish.length > 1 && Math.random() < mistakeChance ? usefulFish[1] : usefulFish[0];
+      const choice = usefulFish.length > 1 && Math.random() < tuning.mistakeChance ? usefulFish[1] : usefulFish[0];
       return { type: "play", slotIndex: choice.slotIndex };
     }
 
     // 得点につながらない魚は温存する。まれな見落としだけを人間らしさとして残す。
-    if (Math.random() < (cpuDifficulty === "easy" ? 0.2 : cpuDifficulty === "hard" ? 0.01 : 0.06)) {
+    if (Math.random() < tuning.unproductiveFishChance) {
       return { type: "play", slotIndex: rankedFish[0].slotIndex };
     }
   }
@@ -1735,6 +1850,93 @@ function chooseNpcChildAction(player: Player): NpcChildAction | null {
   }
 
   return null;
+}
+
+function chooseExpertNpcChildAction(player: Player): NpcChildAction | null {
+  const candidate = getPlayerCandidates(player.id).at(-1);
+  const candidateTotal = candidate ? sumCapturedIds(candidate.capturedIds, player.id) : 0;
+  const escapeSlot = getExpertNpcEscapeSlot(player);
+  const poisonSlot = player.faceUp.findIndex((card) => card?.type === "poison");
+
+  if (activePoison) {
+    if (candidate && escapeSlot !== null && candidateTotal > 0) {
+      return { type: "escape", slotIndex: escapeSlot };
+    }
+
+    if (activePoison.ownerId !== player.id && poisonSlot >= 0) {
+      return { type: "play", slotIndex: poisonSlot };
+    }
+
+    const stackPair = getNpcStackPair(player);
+    return stackPair ? { type: "stack", ...stackPair } : null;
+  }
+
+  const rankedFish = player.faceUp
+    .map((card, slotIndex) => ({ card, slotIndex }))
+    .filter((item): item is { card: FishCard; slotIndex: number } => item.card?.type === "fish")
+    .map((item) => ({ ...item, gain: estimateFishCaptureValue(item.card.value, player.id) }))
+    .sort((left, right) => right.gain - left.gain || left.card.value - right.card.value);
+  const bestFish = rankedFish.find((item) => item.gain > 0);
+  const parentIsLikelyToClose = (
+    npcParentCloseAt !== null && npcParentCloseAt - Date.now() <= 1800
+  ) || (
+    mouthOpenedAt !== null && Date.now() - mouthOpenedAt >= 3200 && getParentCloseTotal() >= 4
+  );
+  const candidateIsAtRisk = candidate ? isExpertCandidateAtRisk(player, candidate) : false;
+
+  if (
+    candidate &&
+    escapeSlot !== null &&
+    candidateTotal > 0 &&
+    (
+      parentIsLikelyToClose ||
+      !bestFish ||
+      bestFish.gain <= candidateTotal ||
+      (candidateIsAtRisk && bestFish.gain < candidateTotal + 3)
+    )
+  ) {
+    return { type: "escape", slotIndex: escapeSlot };
+  }
+
+  if (poisonSlot >= 0 && shouldPlayPoisonNow()) {
+    return { type: "play", slotIndex: poisonSlot };
+  }
+
+  if (bestFish) {
+    return { type: "play", slotIndex: bestFish.slotIndex };
+  }
+
+  if (candidate && escapeSlot !== null && candidateTotal > 0) {
+    return { type: "escape", slotIndex: escapeSlot };
+  }
+
+  const stackPair = getNpcStackPair(player);
+  return stackPair ? { type: "stack", ...stackPair } : null;
+}
+
+function isExpertCandidateAtRisk(player: Player, candidate: FishBoxCard): boolean {
+  return getChildren().some((opponent) =>
+    opponent.id !== player.id && opponent.faceUp.some(
+      (card) => card?.type === "fish" && card.value >= candidate.value && estimateFishCaptureValue(card.value, opponent.id) > 0
+    )
+  );
+}
+
+function getExpertNpcEscapeSlot(player: Player): number | null {
+  const singleFish = player.faceUp
+    .map((card, slotIndex) => ({ card, slotIndex }))
+    .filter((item): item is { card: FishCard; slotIndex: number } => item.card?.type === "fish" && item.card.schoolSize === undefined)
+    .sort((left, right) => left.card.value - right.card.value)[0];
+  if (singleFish) return singleFish.slotIndex;
+
+  const schoolFish = player.faceUp
+    .map((card, slotIndex) => ({ card, slotIndex }))
+    .filter((item): item is { card: FishCard; slotIndex: number } => item.card?.type === "fish")
+    .sort((left, right) => left.card.value - right.card.value)[0];
+  if (schoolFish) return schoolFish.slotIndex;
+
+  const anySlot = player.faceUp.findIndex(Boolean);
+  return anySlot >= 0 ? anySlot : null;
 }
 
 function getNpcStackPair(player: Player): { sourceSlotIndex: number; targetSlotIndex: number } | null {
@@ -1768,32 +1970,31 @@ function estimateFishCaptureValue(value: FishValue, scoringPlayerId: string): nu
 
 function shouldPlayPoisonNow(): boolean {
   const now = Date.now();
-  const parentIsAboutToClose = npcParentCloseAt !== null && npcParentCloseAt - now <= 2400;
-  const mouthHasBeenOpenLongEnough = mouthOpenedAt !== null && now - mouthOpenedAt >= 4800;
-  const parentHasTemptingScore = getParentCloseTotal() >= 6;
+  const tuning = cpuTuning[cpuDifficulty];
+  const parentIsAboutToClose = npcParentCloseAt !== null && npcParentCloseAt - now <= (cpuDifficulty === "expert" ? 1800 : 2400);
+  const mouthHasBeenOpenLongEnough = mouthOpenedAt !== null && now - mouthOpenedAt >= (cpuDifficulty === "expert" ? 2600 : 4800);
+  const parentHasTemptingScore = getParentCloseTotal() >= (cpuDifficulty === "expert" ? 4 : 6);
 
-  const accuracy = cpuDifficulty === "easy" ? 0.58 : cpuDifficulty === "hard" ? 1.08 : 1;
-  if (parentIsAboutToClose) return Math.random() < Math.min(0.97, 0.88 * accuracy);
-  if (mouthHasBeenOpenLongEnough && parentHasTemptingScore) return Math.random() < Math.min(0.92, 0.68 * accuracy);
-  return Math.random() < (cpuDifficulty === "easy" ? 0.12 : cpuDifficulty === "hard" ? 0.02 : 0.05);
+  if (cpuDifficulty === "expert") {
+    return parentIsAboutToClose || parentHasTemptingScore;
+  }
+
+  if (parentIsAboutToClose) return Math.random() < Math.min(0.97, 0.88 * tuning.poisonAccuracy);
+  if (mouthHasBeenOpenLongEnough && parentHasTemptingScore) return Math.random() < Math.min(0.92, 0.68 * tuning.poisonAccuracy);
+  return Math.random() < tuning.randomPoisonChance;
 }
 
-function getCpuDelay(kind: "open" | "poison" | "close" | "secure" | "child"): number {
-  const ranges = {
-    easy: { open: [1400, 2400], poison: [1050, 1750], close: [7200, 11200], secure: [1800, 3000], child: [1800, 3400] },
-    normal: { open: [900, 1600], poison: [650, 1250], close: [5600, 9400], secure: [1100, 2100], child: [1100, 2600] },
-    hard: { open: [550, 1000], poison: [380, 750], close: [4400, 7600], secure: [650, 1250], child: [650, 1500] }
-  } as const;
-  const [min, max] = ranges[cpuDifficulty][kind];
+function getCpuDelay(kind: CpuDelayKind): number {
+  const [min, max] = cpuTuning[cpuDifficulty].delays[kind];
   return randomInt(min, max);
 }
 
 function getCpuPoisonRemovalChance(): number {
-  return cpuDifficulty === "easy" ? 0.48 : cpuDifficulty === "hard" ? 0.94 : 0.78;
+  return cpuTuning[cpuDifficulty].poisonRemovalChance;
 }
 
 function getCpuCloseScore(): number {
-  return cpuDifficulty === "easy" ? 11 : cpuDifficulty === "hard" ? 6 : 8;
+  return cpuTuning[cpuDifficulty].closeScore;
 }
 
 function getNpcEscapeSlot(player: Player): number | null {
@@ -2039,6 +2240,7 @@ function applyOnlineState(state: OnlineGameState): void {
 
 function render(): void {
   cancelStackDrag();
+  const focusedControl = getFocusedControlIdentity();
 
   if (tutorialStep !== null) {
     appRoot.innerHTML = renderTutorialScreen();
@@ -2051,11 +2253,13 @@ function render(): void {
 
   if (modeSetupOpen) {
     appRoot.innerHTML = renderPlayerCountScreen();
+    restoreFocusedControl(appRoot, focusedControl);
     return;
   }
 
   if (onlineLobbyOpen) {
     appRoot.innerHTML = renderOnlineLobby();
+    restoreFocusedControl(appRoot, focusedControl);
     return;
   }
 
@@ -2067,7 +2271,6 @@ function render(): void {
   const rulesWereOpen = appRoot.querySelector<HTMLDetailsElement>(".rules-panel")?.open ?? false;
   const resultWasVisible = appRoot.querySelector(".try-result-panel") !== null;
   const replayWasVisible = appRoot.querySelector(".try-replay-panel") !== null;
-  const focusedControl = getFocusedControlIdentity();
   const focusedChild = getFocusedChild();
   const opponentChildren = getOpponentChildren(focusedChild?.id ?? null);
 
@@ -2223,7 +2426,8 @@ function renderCpuDifficultyOptions(title = "CPUの強さ"): string {
   const options: Array<{ id: CpuDifficulty; label: string; detail: string }> = [
     { id: "easy", label: "弱い", detail: "ゆっくり・ミス多め" },
     { id: "normal", label: "ふつう", detail: "標準的な判断" },
-    { id: "hard", label: "強い", detail: "素早く正確" }
+    { id: "hard", label: "強い", detail: "素早く正確" },
+    { id: "expert", label: "最強", detail: "先読み・ミスなし" }
   ];
   return `
     <section class="difficulty-section" aria-labelledby="difficulty-title">

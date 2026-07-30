@@ -12,6 +12,10 @@ export function getFocusedControlIdentity(): string | null {
     return ["button", element.dataset.action, element.dataset.playerId ?? "", element.dataset.slotIndex ?? ""].join(":");
   }
 
+  if (element instanceof HTMLButtonElement && element.dataset.cpuDifficulty) {
+    return `button:cpu-difficulty:${element.dataset.cpuDifficulty}`;
+  }
+
   if (element instanceof HTMLSelectElement) return `select:${element.name}`;
   return null;
 }
@@ -19,11 +23,15 @@ export function getFocusedControlIdentity(): string | null {
 export function restoreFocusedControl(root: HTMLElement, identity: string | null): void {
   if (!identity) return;
 
-  const controls = root.querySelectorAll<HTMLButtonElement | HTMLSelectElement>("button[data-action], select[name]");
+  const controls = root.querySelectorAll<HTMLButtonElement | HTMLSelectElement>(
+    "button[data-action], button[data-cpu-difficulty], select[name]"
+  );
 
   for (const control of controls) {
     const controlIdentity = control instanceof HTMLButtonElement
-      ? ["button", control.dataset.action, control.dataset.playerId ?? "", control.dataset.slotIndex ?? ""].join(":")
+      ? control.dataset.cpuDifficulty
+        ? `button:cpu-difficulty:${control.dataset.cpuDifficulty}`
+        : ["button", control.dataset.action, control.dataset.playerId ?? "", control.dataset.slotIndex ?? ""].join(":")
       : `select:${control.name}`;
 
     if (controlIdentity !== identity || control.disabled) continue;
