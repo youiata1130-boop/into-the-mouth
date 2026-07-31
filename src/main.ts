@@ -63,7 +63,7 @@ type MouthFishMotion = {
 type GameMode = "cpu" | "online";
 type OnlineRole = "none" | "host" | "guest";
 type OnlineLobbyView = "choice" | "create" | "join";
-type CpuDifficulty = "easy" | "normal" | "hard" | "expert";
+type CpuDifficulty = "easy" | "normal" | "hard" | "advanced" | "expert";
 type CpuDelayKind = "open" | "poison" | "close" | "secure" | "child";
 type CpuTuning = {
   escapeMultiplier: number;
@@ -172,6 +172,19 @@ const cpuTuning = {
     poisonRemovalChance: 0.94,
     closeScore: 6,
     delays: { open: [550, 1000], poison: [380, 750], close: [4400, 7600], secure: [650, 1250], child: [650, 1500] }
+  },
+  advanced: {
+    escapeMultiplier: 1.22,
+    mistakeChance: 0.01,
+    unproductiveFishChance: 0.003,
+    poisonTakeoverChance: 0.95,
+    ownPoisonFishAvoidChance: 0.99,
+    opponentPoisonFishAvoidChance: 0.97,
+    poisonAccuracy: 1.14,
+    randomPoisonChance: 0.01,
+    poisonRemovalChance: 0.98,
+    closeScore: 6,
+    delays: { open: [450, 800], poison: [260, 500], close: [3800, 6500], secure: [450, 850], child: [480, 1000] }
   },
   expert: {
     escapeMultiplier: 1.25,
@@ -1062,7 +1075,7 @@ function escapeHtml(value: string): string {
 }
 
 function isCpuDifficulty(value: unknown): value is CpuDifficulty {
-  return value === "easy" || value === "normal" || value === "hard" || value === "expert";
+  return value === "easy" || value === "normal" || value === "hard" || value === "advanced" || value === "expert";
 }
 
 function updateOnlineLobbyMembers(): void {
@@ -1677,16 +1690,20 @@ function clearNpcTimers(resetDeadlines = false): void {
   }
 }
 
+function usesStableNpcDeadlines(): boolean {
+  return cpuDifficulty === "advanced" || cpuDifficulty === "expert";
+}
+
 function scheduleNpcParentAction(): void {
   if (!isNpcParent() || !isMouthOpen || isTryEnded || isGameOver) return;
   if (isPlayerWaitingAfterOwnAction(getParent().id)) return;
 
   if (activePoison) {
-    if (cpuDifficulty === "expert" && npcParentPoisonActAt === null) {
+    if (usesStableNpcDeadlines() && npcParentPoisonActAt === null) {
       npcParentPoisonActAt = Date.now() + getCpuDelay("poison");
     }
-    const poisonActionDelay = cpuDifficulty === "expert" && npcParentPoisonActAt !== null
-      ? Math.max(40, npcParentPoisonActAt - Date.now())
+    const poisonActionDelay = usesStableNpcDeadlines() && npcParentPoisonActAt !== null
+      ? Math.max(cpuDifficulty === "expert" ? 40 : 120, npcParentPoisonActAt - Date.now())
       : getCpuDelay("poison");
 
     npcParentTimerId = window.setTimeout(() => {
@@ -1710,7 +1727,7 @@ function scheduleNpcParentAction(): void {
 
   const availableScore = getParentCloseTotal();
 
-  if (availableScore >= getCpuCloseScore() || shouldExpertParentSecure(availableScore)) {
+  if (availableScore >= getCpuCloseScore() || shouldStrategicParentSecure(availableScore)) {
     npcParentCloseAt = Math.min(npcParentCloseAt, Date.now() + getCpuDelay("secure"));
   }
 
@@ -1723,11 +1740,11 @@ function scheduleNpcParentAction(): void {
     }
 
     closeMouth();
-  }, Math.max(cpuDifficulty === "expert" ? 40 : 260, npcParentCloseAt - Date.now()));
+  }, Math.max(cpuDifficulty === "expert" ? 40 : cpuDifficulty === "advanced" ? 120 : 260, npcParentCloseAt - Date.now()));
 }
 
-function shouldExpertParentSecure(availableScore: number): boolean {
-  if (cpuDifficulty !== "expert" || availableScore <= 0) return false;
+function shouldStrategicParentSecure(availableScore: number): boolean {
+  if (!usesStableNpcDeadlines() || availableScore <= 0) return false;
 
   return getChildren().some((player) => {
     const canAct = player.faceUp.some(Boolean);
@@ -1737,7 +1754,8 @@ function shouldExpertParentSecure(availableScore: number): boolean {
       (candidate) => sumCapturedIds(candidate.capturedIds, player.id) > 0
     );
     const canPlayPoison = player.faceUp.some((card) => card?.type === "poison");
-    return canEscapeWithPoints || canPlayPoison;
+    if (cpuDifficulty === "expert") return canEscapeWithPoints || canPlayPoison;
+    return (canEscapeWithPoints && availableScore >= 3) || (canPlayPoison && availableScore >= 5);
   });
 }
 
@@ -1747,16 +1765,16 @@ function scheduleNpcChildAction(): void {
   );
 
   if (npcChildren.length === 0) {
-    if (cpuDifficulty === "expert") npcChildActAt = null;
+    if (usesStableNpcDeadlines()) npcChildActAt = null;
     return;
   }
 
-  if (cpuDifficulty === "expert" && npcChildActAt === null) {
+  if (usesStableNpcDeadlines() && npcChildActAt === null) {
     npcChildActAt = Date.now() + getCpuDelay("child");
   }
 
-  const actionDelay = cpuDifficulty === "expert" && npcChildActAt !== null
-    ? Math.max(80, npcChildActAt - Date.now())
+  const actionDelay = usesStableNpcDeadlines() && npcChildActAt !== null
+    ? Math.max(cpuDifficulty === "expert" ? 80 : 140, npcChildActAt - Date.now())
     : getCpuDelay("child");
 
   npcChildTimerId = window.setTimeout(() => {
@@ -1971,9 +1989,12 @@ function estimateFishCaptureValue(value: FishValue, scoringPlayerId: string): nu
 function shouldPlayPoisonNow(): boolean {
   const now = Date.now();
   const tuning = cpuTuning[cpuDifficulty];
-  const parentIsAboutToClose = npcParentCloseAt !== null && npcParentCloseAt - now <= (cpuDifficulty === "expert" ? 1800 : 2400);
-  const mouthHasBeenOpenLongEnough = mouthOpenedAt !== null && now - mouthOpenedAt >= (cpuDifficulty === "expert" ? 2600 : 4800);
-  const parentHasTemptingScore = getParentCloseTotal() >= (cpuDifficulty === "expert" ? 4 : 6);
+  const closeLookaheadMs = cpuDifficulty === "expert" ? 3200 : cpuDifficulty === "advanced" ? 2800 : 2400;
+  const minimumMouthOpenMs = cpuDifficulty === "expert" ? 2600 : cpuDifficulty === "advanced" ? 3600 : 4800;
+  const temptingScore = cpuDifficulty === "expert" ? 4 : cpuDifficulty === "advanced" ? 5 : 6;
+  const parentIsAboutToClose = npcParentCloseAt !== null && npcParentCloseAt - now <= closeLookaheadMs;
+  const mouthHasBeenOpenLongEnough = mouthOpenedAt !== null && now - mouthOpenedAt >= minimumMouthOpenMs;
+  const parentHasTemptingScore = getParentCloseTotal() >= temptingScore;
 
   if (cpuDifficulty === "expert") {
     return parentIsAboutToClose || parentHasTemptingScore;
@@ -2427,6 +2448,7 @@ function renderCpuDifficultyOptions(title = "CPUの強さ"): string {
     { id: "easy", label: "弱い", detail: "ゆっくり・ミス多め" },
     { id: "normal", label: "ふつう", detail: "標準的な判断" },
     { id: "hard", label: "強い", detail: "素早く正確" },
+    { id: "advanced", label: "達人", detail: "先読み・わずかに隙あり" },
     { id: "expert", label: "最強", detail: "先読み・ミスなし" }
   ];
   return `

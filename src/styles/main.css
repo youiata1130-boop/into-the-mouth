@@ -200,6 +200,10 @@
   color: var(--coral-dark);
 }
 
+.difficulty-option:last-child:nth-child(odd) {
+  grid-column: 1 / -1;
+}
+
 .online-lobby h1 {
   font-size: clamp(2.5rem, 8vw, 4.8rem);
 }
