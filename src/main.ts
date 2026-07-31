@@ -243,7 +243,7 @@ const tutorialSteps: readonly TutorialStep[] = [
     chapter: "子の冒険",
     kicker: "捕食成功",
     title: "今度はこちらの番！",
-    dialogue: "魚4が敵の魚3を食べました。食べた魚が持っていた獲物も、まとめて引き継ぎます。",
+    dialogue: "魚を食べることができました！ 魚は数字が同じかそれよりも大きい数の数字の魚を出すことで食べることができます。",
     helper: "強い魚ほど頼もしいですが、さらに大きな魚には食べられてしまいます。",
     autoAdvanceMs: 4500
   },
