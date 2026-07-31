@@ -78,13 +78,32 @@ type CpuTuning = {
   closeScore: number;
   delays: Record<CpuDelayKind, readonly [number, number]>;
 };
-type TutorialAction = "play-fish-2" | "play-fish-4" | "close-mouth" | "remove-poison";
+type TutorialAction = "play-fish-2" | "play-fish-4" | "escape" | "continue-result" | "close-mouth" | "remove-poison";
+type TutorialVisual =
+  | "first-meal"
+  | "first-feast"
+  | "enemy-ambush"
+  | "first-counterattack"
+  | "first-victory"
+  | "mouth-closed"
+  | "escape-retry"
+  | "escape-ready"
+  | "escape-success"
+  | "escape-result"
+  | "parent-view"
+  | "close-moment"
+  | "poison-warning"
+  | "poison-practice"
+  | "poison-cleared"
+  | "rule-cards"
+  | "finale";
 type TutorialStep = {
   chapter: string;
   kicker: string;
   title: string;
   dialogue: string;
   helper: string;
+  visual: TutorialVisual;
   action?: TutorialAction;
   autoAdvanceMs?: number;
   nextLabel?: string;
@@ -131,6 +150,14 @@ type OnlineGameState = {
   logEntries: string[];
   tryEndReason: TryEndReason | null;
   tryStartScores: Record<string, number>;
+};
+type TryResultView = {
+  players: Player[];
+  cards: BoxCard[];
+  startScores: Record<string, number>;
+  endReason: TryEndReason | null;
+  actionsHtml: string;
+  embedded?: boolean;
 };
 
 const cpuTuning = {
@@ -213,6 +240,7 @@ const tutorialSteps: readonly TutorialStep[] = [
     title: "くじらの入り江へ",
     dialogue: "こんにちは！ あんなところに、おいしそうなご飯がありますね。魚を出して食べに行きましょう。",
     helper: "光っている魚2をタップしてください。",
+    visual: "first-meal",
     action: "play-fish-2"
   },
   {
@@ -221,6 +249,7 @@ const tutorialSteps: readonly TutorialStep[] = [
     title: "ごちそうを食べました",
     dialogue: "おいしかったですね！",
     helper: "魚2は餌1を食べ、そのまま口の中を泳ぎます。",
+    visual: "first-feast",
     autoAdvanceMs: 4000
   },
   {
@@ -229,6 +258,7 @@ const tutorialSteps: readonly TutorialStep[] = [
     title: "魚2が食べられた！",
     dialogue: "あ！ お魚が食べられてしまいました。",
     helper: "魚3は魚2より強いため、魚2が食べた餌ごと引き継ぎます。",
+    visual: "enemy-ambush",
     autoAdvanceMs: 5000
   },
   {
@@ -237,6 +267,7 @@ const tutorialSteps: readonly TutorialStep[] = [
     title: "もっと大きな魚を！",
     dialogue: "より大きい魚を出して、あの魚を食べに行きましょう！",
     helper: "光っている魚4をタップしてください。",
+    visual: "first-counterattack",
     action: "play-fish-4"
   },
   {
@@ -245,15 +276,53 @@ const tutorialSteps: readonly TutorialStep[] = [
     title: "今度はこちらの番！",
     dialogue: "魚を食べることができました！ 魚は数字が同じかそれよりも大きい数の数字の魚を出すことで食べることができます。",
     helper: "強い魚ほど頼もしいですが、さらに大きな魚には食べられてしまいます。",
+    visual: "first-victory",
     autoAdvanceMs: 4500
   },
   {
     chapter: "子の冒険",
     kicker: "トライ終了",
-    title: "パクン！",
-    dialogue: "少し待っていると、親が口を閉じました。",
-    helper: "口の中に残った、他の子の有効な数字カードは親の得点になります。親自身の餌1は含みません。",
-    nextLabel: "親になってみる"
+    title: "ここは大きな口の中！",
+    dialogue: "うわ！！びっくりしましたね。\nここは大きな魚の口の中だったのですね！\n\n獲物を捕まえたら食べられてしまう前に逃げるようにしましょう！",
+    helper: "次のトライでは、同じ魚4で獲物を捕まえ、逃げる操作まで練習します。",
+    visual: "mouth-closed",
+    nextLabel: "逃げる練習へ"
+  },
+  {
+    chapter: "子の冒険",
+    kicker: "STORY 1.5 · 逃げる練習",
+    title: "もう一度、魚4を出そう",
+    dialogue: "さあ、もう一度です。魚3が、魚2と餌1を持って泳いでいます。",
+    helper: "光っている魚4をタップして、魚3を食べてください。",
+    visual: "escape-retry",
+    action: "play-fish-4"
+  },
+  {
+    chapter: "子の冒険",
+    kicker: "逃げるチャンス",
+    title: "食べられる前に逃げよう",
+    dialogue: "魚4が魚3を食べ、逃げる権利を手に入れました。獲物を捕まえた魚が口の中にいる間は、手札1枚を裏向きで使って逃げられます。",
+    helper: "手札の魚2の下にある「裏で逃げる 4点」をタップしてください。",
+    visual: "escape-ready",
+    action: "escape"
+  },
+  {
+    chapter: "子の冒険",
+    kicker: "逃走成功",
+    title: "ヒューん！ 逃げ切りました",
+    dialogue: "今度は食べられてしまう前に、逃げることができました！",
+    helper: "相手の魚3は3点、親の餌1は1点。自分の魚2・魚4と逃走用カードは数えないので、3＋1＝4点です。",
+    visual: "escape-success",
+    nextLabel: "リザルトを見る"
+  },
+  {
+    chapter: "子の冒険",
+    kicker: "この回の結果",
+    title: "4点を獲得！",
+    dialogue: "逃げに成功した瞬間、4点が確定して、このトライは終了します。",
+    helper: "通常のゲームでも、トライ終了後に今回の獲得点・合計点・カードが出た順番をリザルトで確認できます。",
+    visual: "escape-result",
+    action: "continue-result"
   },
   {
     chapter: "親の冒険",
@@ -261,6 +330,7 @@ const tutorialSteps: readonly TutorialStep[] = [
     title: "口を閉じるタイミング",
     dialogue: "口の中に魚がたくさん入ってきたら、口を閉じましょう。",
     helper: "欲張りすぎず、今いる魚を得点にする瞬間を見極めます。",
+    visual: "parent-view",
     nextLabel: "タイミングを見る"
   },
   {
@@ -269,6 +339,7 @@ const tutorialSteps: readonly TutorialStep[] = [
     title: "いまだ！",
     dialogue: "たくさんの魚が口に入りました。今なら高得点を狙えそうです。",
     helper: "「口を閉じる」をタップしてください。",
+    visual: "close-moment",
     action: "close-mouth"
   },
   {
@@ -277,6 +348,7 @@ const tutorialSteps: readonly TutorialStep[] = [
     title: "すべりこんだ毒魚",
     dialogue: "口を閉じるその瞬間、毒魚が入ってきました。毒魚には気を付けましょう。",
     helper: "有効な毒魚は閉じる前に取り除きます。残したまま閉じると、毒魚の持ち主が10点、親は0点です。",
+    visual: "poison-warning",
     nextLabel: "取り除く練習へ"
   },
   {
@@ -285,6 +357,7 @@ const tutorialSteps: readonly TutorialStep[] = [
     title: "毒魚を見つけた！",
     dialogue: "今度は口を閉じる前に毒魚を見つけました。親は時間制限なく毒魚を取り除けます。",
     helper: "光っている「毒魚を取り除く」ボタンをタップしてください。",
+    visual: "poison-practice",
     action: "remove-poison"
   },
   {
@@ -293,6 +366,7 @@ const tutorialSteps: readonly TutorialStep[] = [
     title: "ふう、間に合いました",
     dialogue: "これで毒魚の効果はなくなりました。魚が集まったら、あらためて口を閉じましょう。",
     helper: "毒魚を取り除く時間に制限はありません。慌てず、口の中をよく見ましょう。",
+    visual: "poison-cleared",
     autoAdvanceMs: 4500
   },
   {
@@ -301,6 +375,7 @@ const tutorialSteps: readonly TutorialStep[] = [
     title: "逃げる・毒魚・魚群",
     dialogue: "入り江で生き残るための、特別な作戦も覚えておきましょう。",
     helper: "逃げる成功で得点を確定。毒魚は早めに取り除き、同じ魚2・魚3は群れにできます。",
+    visual: "rule-cards",
     nextLabel: "冒険のまとめへ"
   },
   {
@@ -309,6 +384,7 @@ const tutorialSteps: readonly TutorialStep[] = [
     title: "親でも子でも得点しよう",
     dialogue: "全員が1回ずつ親を担当し、最後に合計得点がいちばん高い人の勝ちです。",
     helper: "1人の親ラウンドは3トライ。入り江の流れを読み、最高得点を目指しましょう！",
+    visual: "finale",
     nextLabel: "チュートリアルを終える"
   }
 ] as const;
@@ -381,6 +457,8 @@ const simpleActions: Record<string, () => void> = {
   "tutorial-next": showNextTutorialStep,
   "tutorial-play-fish-2": playTutorialFish2,
   "tutorial-play-fish-4": playTutorialFish4,
+  "tutorial-escape": escapeTutorialFish,
+  "tutorial-continue-result": continueTutorialResult,
   "tutorial-close-mouth": closeTutorialMouth,
   "tutorial-remove-poison": removeTutorialPoison,
   "close-tutorial": closeTutorial,
@@ -2265,7 +2343,8 @@ function render(): void {
 
   if (tutorialStep !== null) {
     appRoot.innerHTML = renderTutorialScreen();
-    const tutorialFocusTarget = appRoot.querySelector<HTMLElement>(".story-tutorial-action-target")
+    const tutorialFocusTarget = appRoot.querySelector<HTMLElement>(".story-tutorial-result-stage .try-result-panel")
+      ?? appRoot.querySelector<HTMLElement>(".story-tutorial-action-target")
       ?? appRoot.querySelector<HTMLElement>(".story-tutorial-shell");
     tutorialFocusTarget?.focus({ preventScroll: true });
     scheduleTutorialAutoAdvance();
@@ -2545,6 +2624,16 @@ function playTutorialFish4(): void {
   setTutorialStep(tutorialStep + 1);
 }
 
+function escapeTutorialFish(): void {
+  if (tutorialStep === null || tutorialSteps[tutorialStep].action !== "escape") return;
+  setTutorialStep(tutorialStep + 1);
+}
+
+function continueTutorialResult(): void {
+  if (tutorialStep === null || tutorialSteps[tutorialStep].action !== "continue-result") return;
+  setTutorialStep(tutorialStep + 1);
+}
+
 function closeTutorialMouth(): void {
   if (tutorialStep === null || tutorialSteps[tutorialStep].action !== "close-mouth") return;
   setTutorialStep(tutorialStep + 1);
@@ -2590,11 +2679,12 @@ function renderTutorialScreen(): string {
   const isLast = stepIndex === tutorialSteps.length - 1;
   const waitsForAction = step.action !== undefined;
   const advancesAutomatically = step.autoAdvanceMs !== undefined;
+  const isResultStep = step.visual === "escape-result";
 
   return `
     <main class="story-tutorial-screen">
       <section
-        class="story-tutorial-shell scene-${stepIndex}"
+        class="story-tutorial-shell scene-${step.visual}"
         role="dialog"
         aria-modal="true"
         aria-labelledby="tutorial-title"
@@ -2617,9 +2707,9 @@ function renderTutorialScreen(): string {
           ${tutorialSteps.map((_, index) => `<span class="${index <= stepIndex ? "is-complete" : ""}${index === stepIndex ? " is-current" : ""}"></span>`).join("")}
         </div>
 
-        <div class="story-tutorial-body">
+        <div class="story-tutorial-body${isResultStep ? " is-result-step" : ""}">
           <section class="story-tutorial-world" aria-label="${step.title}の物語場面">
-            ${renderTutorialVisual(stepIndex)}
+            ${renderTutorialVisual(step.visual)}
           </section>
 
           <section class="story-tutorial-narrative" aria-live="polite">
@@ -2627,7 +2717,7 @@ function renderTutorialScreen(): string {
             <h1 id="tutorial-title">${step.title}</h1>
             <div class="story-dialogue" id="tutorial-dialogue">
               <span aria-hidden="true">“</span>
-              <p>${step.dialogue}</p>
+              <p>${renderTutorialDialogue(step.dialogue)}</p>
             </div>
             <p class="story-helper"><strong>${waitsForAction ? "YOUR TURN" : step.chapter === "海の手引き" ? "MEMO" : "POINT"}</strong><span>${step.helper}</span></p>
           </section>
@@ -2647,8 +2737,12 @@ function renderTutorialScreen(): string {
   `;
 }
 
-function renderTutorialVisual(stepIndex: number): string {
-  if (stepIndex === 0) {
+function renderTutorialDialogue(dialogue: string): string {
+  return escapeHtml(dialogue).replace(/\n/g, "<br>");
+}
+
+function renderTutorialVisual(visual: TutorialVisual): string {
+  if (visual === "first-meal") {
     return renderStoryWhaleScene(
       "open",
       "is-first-meal",
@@ -2658,7 +2752,7 @@ function renderTutorialVisual(stepIndex: number): string {
     );
   }
 
-  if (stepIndex === 1) {
+  if (visual === "first-feast") {
     return renderStoryWhaleScene(
       "open",
       "is-feast",
@@ -2668,7 +2762,7 @@ function renderTutorialVisual(stepIndex: number): string {
     );
   }
 
-  if (stepIndex === 2) {
+  if (visual === "enemy-ambush") {
     return renderStoryWhaleScene(
       "open",
       "is-ambush",
@@ -2678,7 +2772,7 @@ function renderTutorialVisual(stepIndex: number): string {
     );
   }
 
-  if (stepIndex === 3) {
+  if (visual === "first-counterattack") {
     return renderStoryWhaleScene(
       "open",
       "is-counterattack",
@@ -2688,7 +2782,7 @@ function renderTutorialVisual(stepIndex: number): string {
     );
   }
 
-  if (stepIndex === 4) {
+  if (visual === "first-victory") {
     return renderStoryWhaleScene(
       "open",
       "is-victory",
@@ -2698,7 +2792,7 @@ function renderTutorialVisual(stepIndex: number): string {
     );
   }
 
-  if (stepIndex === 5) {
+  if (visual === "mouth-closed") {
     return renderStoryWhaleScene(
       "fed",
       "is-mouth-closed",
@@ -2708,7 +2802,39 @@ function renderTutorialVisual(stepIndex: number): string {
     );
   }
 
-  if (stepIndex === 6) {
+  if (visual === "escape-retry") {
+    return renderStoryWhaleScene(
+      "open",
+      "is-escape-retry",
+      renderStoryFishToken(3, "is-center is-enemy", "魚2＋餌1"),
+      renderStoryHandCard(4, "tutorial-play-fish-4", "もう一度、魚4を出して魚3を食べる"),
+      "もう一度、敵の魚3が魚2と餌1を持って泳いでいます。"
+    );
+  }
+
+  if (visual === "escape-ready") {
+    return renderStoryWhaleScene(
+      "open",
+      "is-escape-ready",
+      `${renderStoryFishToken(3, "is-left is-swallowed", "食べられた")}${renderStoryFishToken(4, "is-center is-feasting", "魚3＋魚2＋餌1")}`,
+      renderStoryEscapeControl(4),
+      "魚4が獲物を捕まえ、手札の魚2を裏向きで使って逃げられる状態です。"
+    );
+  }
+
+  if (visual === "escape-success") {
+    return renderStoryWhaleScene(
+      "open",
+      "is-escape-success",
+      "",
+      `${renderStoryFishToken(4, "is-escaping", "4点確定")}<div class="story-escape-success"><span>ヒューん！</span><strong>+4点</strong><small>逃げる成功</small></div>`,
+      "魚4が口の外へ逃げ、4点を確定しました。"
+    );
+  }
+
+  if (visual === "escape-result") return renderTutorialTryResult();
+
+  if (visual === "parent-view") {
     return renderStoryWhaleScene(
       "open",
       "is-parent-view",
@@ -2718,7 +2844,7 @@ function renderTutorialVisual(stepIndex: number): string {
     );
   }
 
-  if (stepIndex === 7) {
+  if (visual === "close-moment") {
     return renderStoryWhaleScene(
       "open",
       "is-close-moment",
@@ -2733,7 +2859,7 @@ function renderTutorialVisual(stepIndex: number): string {
     );
   }
 
-  if (stepIndex === 8) {
+  if (visual === "poison-warning") {
     return renderStoryWhaleScene(
       "poisoned",
       "is-poisoned",
@@ -2743,7 +2869,7 @@ function renderTutorialVisual(stepIndex: number): string {
     );
   }
 
-  if (stepIndex === 9) {
+  if (visual === "poison-practice") {
     return renderStoryWhaleScene(
       "open",
       "is-poison-practice",
@@ -2758,7 +2884,7 @@ function renderTutorialVisual(stepIndex: number): string {
     );
   }
 
-  if (stepIndex === 10) {
+  if (visual === "poison-cleared") {
     return renderStoryWhaleScene(
       "open",
       "is-poison-cleared",
@@ -2768,7 +2894,7 @@ function renderTutorialVisual(stepIndex: number): string {
     );
   }
 
-  if (stepIndex === 11) return renderTutorialRuleCards();
+  if (visual === "rule-cards") return renderTutorialRuleCards();
 
   return renderStoryWhaleScene(
     "open",
@@ -2835,6 +2961,116 @@ function renderStoryHandCard(
         <b>${value}</b>
         <small>タップ！</small>
       </button>
+    </div>
+  `;
+}
+
+function renderStoryEscapeControl(points: number): string {
+  return `
+    <div class="story-hand-dock is-escape-dock">
+      <span class="story-hand-label">あなたの手札</span>
+      <span class="story-hand-card value-2 is-escape-source" aria-hidden="true">
+        <img src="${fishArtPaths[2]}" alt="">
+        <b>2</b>
+        <small>手札のカード</small>
+      </span>
+      <button
+        class="escape-chip story-tutorial-escape-chip story-tutorial-action-target"
+        type="button"
+        data-action="tutorial-escape"
+        aria-label="手札の魚2を裏向きで使い、魚4で${points}点を確定して逃げる"
+      >
+        裏で逃げる ${points}点
+      </button>
+    </div>
+  `;
+}
+
+function renderTutorialTryResult(): string {
+  const resultPlayers: Player[] = [
+    { id: "player-1", name: "親CPU", role: "parent", score: 0, drawPile: [], faceUp: [], used: [] },
+    { id: "player-2", name: "あなた", role: "child", score: 4, drawPile: [], faceUp: [], used: [] },
+    { id: "player-3", name: "ライバルCPU", role: "child", score: 0, drawPile: [], faceUp: [], used: [] }
+  ];
+  const resultCards: BoxCard[] = [
+    {
+      boxId: 1,
+      type: "bait",
+      value: 1,
+      ownerId: "player-1",
+      ownerName: "親CPU",
+      sequence: 1,
+      consumedById: 4
+    },
+    {
+      boxId: 2,
+      sourceCardId: 101,
+      type: "fish",
+      value: 2,
+      ownerId: "player-2",
+      ownerName: "あなた",
+      sequence: 2,
+      consumedById: 4,
+      capturedIds: [],
+      poisonScoredById: null,
+      poisonScoredByName: null,
+      invalidatedByOwnPoison: false,
+      escaped: false
+    },
+    {
+      boxId: 3,
+      sourceCardId: 102,
+      type: "fish",
+      value: 3,
+      ownerId: "player-3",
+      ownerName: "ライバルCPU",
+      sequence: 3,
+      consumedById: 4,
+      capturedIds: [],
+      poisonScoredById: null,
+      poisonScoredByName: null,
+      invalidatedByOwnPoison: false,
+      escaped: false
+    },
+    {
+      boxId: 4,
+      sourceCardId: 103,
+      type: "fish",
+      value: 4,
+      ownerId: "player-2",
+      ownerName: "あなた",
+      sequence: 4,
+      consumedById: null,
+      capturedIds: [1, 2, 3],
+      poisonScoredById: null,
+      poisonScoredByName: null,
+      invalidatedByOwnPoison: false,
+      escaped: true
+    },
+    {
+      boxId: 5,
+      sourceCardId: 104,
+      type: "escape",
+      ownerId: "player-2",
+      ownerName: "あなた",
+      sequence: 5,
+      successful: true
+    }
+  ];
+
+  return `
+    <div class="story-tutorial-result-stage">
+      ${renderTryResultOverlay({
+        players: resultPlayers,
+        cards: resultCards,
+        startScores: { "player-1": 0, "player-2": 0, "player-3": 0 },
+        endReason: "escape",
+        embedded: true,
+        actionsHtml: `
+          <button class="secondary-button story-tutorial-action-target" type="button" data-action="tutorial-continue-result">次のトライ</button>
+          <button class="secondary-button" type="button" disabled>親を交代</button>
+        `
+      })}
     </div>
   `;
 }
@@ -3577,22 +3813,32 @@ function getTryReplayScoreSummary(): string {
   `;
 }
 
-function renderTryResultOverlay(): string {
+function renderTryResultOverlay(view?: TryResultView): string {
+  const resultPlayers = view?.players ?? players;
+  const resultCards = view?.cards ?? boxCards;
+  const resultStartScores = view?.startScores ?? tryStartScores;
+  const resultEndReason = view ? view.endReason : tryEndReason;
+  const resultIsGameOver = view ? false : isGameOver;
+  const resultActions = view?.actionsHtml ?? renderRoundActionButtons();
+  const accessibility = view?.embedded
+    ? 'role="region" aria-labelledby="try-result-title" tabindex="-1"'
+    : 'role="dialog" aria-modal="true" aria-labelledby="try-result-title" tabindex="-1"';
+
   return `
-    <section class="try-result-panel" role="dialog" aria-modal="true" aria-labelledby="try-result-title" tabindex="-1">
+    <section class="try-result-panel${view?.embedded ? " is-embedded" : ""}" ${accessibility}>
       <div class="try-result-header">
         <p class="section-label">1回終了</p>
-        <h2 id="try-result-title">${isGameOver ? "ゲーム終了" : "この回の結果"}</h2>
+        <h2 id="try-result-title">${resultIsGameOver ? "ゲーム終了" : "この回の結果"}</h2>
       </div>
-      ${isGameOver ? renderWinnerNotice() : ""}
+      ${resultIsGameOver ? renderWinnerNotice() : ""}
       <div class="try-result-grid">
         <section class="try-score-section">
           <p class="section-label">獲得点</p>
           <div class="try-score-list">
-            ${players
+            ${resultPlayers
               .map(
                 (player) => {
-                  const gained = getTryScoreGain(player);
+                  const gained = player.score - (resultStartScores[player.id] ?? player.score);
 
                   return `
                     <div
@@ -3620,13 +3866,13 @@ function renderTryResultOverlay(): string {
           <p class="section-label">カード順</p>
           <p class="try-order-caption">左から、箱に入った順です。</p>
           <div class="try-card-track" aria-label="このトライのカード順">
-            ${boxCards.map(renderTryTimelineCard).join("")}
-            ${renderTryEndMarker()}
+            ${resultCards.map((card) => renderTryTimelineCard(card, resultCards)).join("")}
+            ${renderTryEndMarker(resultEndReason)}
           </div>
         </section>
       </div>
       <div class="round-actions">
-        ${renderRoundActionButtons()}
+        ${resultActions}
       </div>
     </section>
   `;
@@ -3636,10 +3882,10 @@ function getTryScoreGain(player: Player): number {
   return player.score - (tryStartScores[player.id] ?? player.score);
 }
 
-function renderTryTimelineCard(card: BoxCard): string {
+function renderTryTimelineCard(card: BoxCard, sourceCards: BoxCard[] = boxCards): string {
   const escapedHere = card.type === "escape" && card.successful;
   const label = getTryOrderLabel(card);
-  const detail = getTryOrderDetail(card);
+  const detail = getTryOrderDetail(card, sourceCards);
 
   return `
     <div class="try-card-step" aria-label="${label}。${detail}">
@@ -3649,12 +3895,12 @@ function renderTryTimelineCard(card: BoxCard): string {
   `;
 }
 
-function renderTryEndMarker(): string {
-  if (tryEndReason === "parent-close") {
+function renderTryEndMarker(endReason: TryEndReason | null = tryEndReason): string {
+  if (endReason === "parent-close") {
     return '<div class="try-end-marker is-close" role="note"><strong>パク！</strong><span>ここで口を閉じた</span></div>';
   }
 
-  if (tryEndReason === "poison-close") {
+  if (endReason === "poison-close") {
     return '<div class="try-end-marker is-poison" role="note"><strong>毒発動</strong><span>毒魚を食べてしまった</span></div>';
   }
 
@@ -3668,10 +3914,10 @@ function getTryOrderLabel(card: BoxCard): string {
   return `${card.ownerName} ${getFishCardLabel(card)}`;
 }
 
-function getTryOrderDetail(card: BoxCard): string {
+function getTryOrderDetail(card: BoxCard, sourceCards: BoxCard[] = boxCards): string {
   if (card.type === "bait") {
     return card.consumedById
-      ? `魚${getEatingFishValue(card.consumedById)}に食べられた`
+      ? `魚${getEatingFishValue(card.consumedById, sourceCards)}に食べられた`
       : `${card.ownerName}自身の餌・0点`;
   }
 
@@ -3694,19 +3940,19 @@ function getTryOrderDetail(card: BoxCard): string {
   }
 
   if (card.escaped) {
-    return `逃げ成功 ${sumCapturedIds(card.capturedIds, card.ownerId)}点`;
+    return `逃げ成功 ${sumBoardCapturedIds(sourceCards, card.capturedIds, card.ownerId)}点`;
   }
 
   if (card.consumedById) {
-    return `魚${getEatingFishValue(card.consumedById)}に食べられた`;
+    return `魚${getEatingFishValue(card.consumedById, sourceCards)}に食べられた`;
   }
 
-  const candidateTotal = sumCapturedIds(card.capturedIds, card.ownerId);
+  const candidateTotal = sumBoardCapturedIds(sourceCards, card.capturedIds, card.ownerId);
   return candidateTotal > 0 ? `未確定候補 ${candidateTotal}点` : "得点候補なし";
 }
 
-function getEatingFishValue(boxId: number): string {
-  const card = boxCards.find((item): item is FishBoxCard => item.type === "fish" && item.boxId === boxId);
+function getEatingFishValue(boxId: number, sourceCards: BoxCard[] = boxCards): string {
+  const card = sourceCards.find((item): item is FishBoxCard => item.type === "fish" && item.boxId === boxId);
   return card ? String(card.value) : "?";
 }
 

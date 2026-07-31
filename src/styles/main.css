@@ -6035,6 +6035,22 @@ body {
   padding: 16px 20px;
 }
 
+.story-tutorial-body.is-result-step {
+  grid-template-columns: 1fr;
+  overflow: auto;
+}
+
+.story-tutorial-body.is-result-step .story-tutorial-narrative {
+  order: 1;
+  align-self: stretch;
+  padding-block: 16px;
+}
+
+.story-tutorial-body.is-result-step .story-tutorial-world {
+  order: 2;
+  min-height: clamp(430px, 65svh, 620px);
+}
+
 .story-tutorial-world {
   position: relative;
   min-width: 0;
@@ -6562,6 +6578,107 @@ body {
   font-weight: 1000;
 }
 
+.story-hand-dock.is-escape-dock .story-hand-card {
+  display: block;
+  cursor: default;
+  animation: none;
+}
+
+.story-hand-dock.is-escape-dock::before {
+  display: none;
+}
+
+.story-tutorial-escape-chip {
+  position: relative;
+  min-width: 168px;
+  min-height: 44px;
+  margin-top: 7px;
+  border: 3px solid var(--story-gold);
+  border-radius: 999px;
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 1000;
+  box-shadow: 0 0 0 7px rgba(255, 215, 94, 0.2), 0 8px 18px rgba(0, 29, 42, 0.42);
+  animation: story-action-pulse 1.15s ease-in-out infinite;
+}
+
+.story-tutorial-escape-chip::before {
+  content: "↓";
+  position: absolute;
+  left: 50%;
+  top: -38px;
+  color: var(--story-gold);
+  font-size: 1.7rem;
+  pointer-events: none;
+  text-shadow: 0 3px 8px rgba(0, 25, 36, 0.6);
+  transform: translateX(-50%);
+}
+
+.story-ocean-scene.is-escape-success .story-fish-token.is-escaping {
+  left: 72%;
+  top: 22%;
+  animation: story-fish-escape 900ms cubic-bezier(0.16, 0.78, 0.24, 1) both;
+}
+
+.story-escape-success {
+  position: absolute;
+  z-index: 12;
+  left: 50%;
+  top: 50%;
+  display: grid;
+  place-items: center;
+  transform: translate(-50%, -50%);
+  color: #fff;
+  text-align: center;
+  text-shadow: 0 4px 12px rgba(0, 30, 42, 0.55);
+}
+
+.story-escape-success span,
+.story-escape-success strong,
+.story-escape-success small {
+  display: block;
+}
+
+.story-escape-success span {
+  color: var(--story-gold);
+  font-size: clamp(1.3rem, 4vw, 2.4rem);
+  font-weight: 1000;
+}
+
+.story-escape-success strong {
+  font-size: clamp(2.4rem, 8vw, 5rem);
+  line-height: 1;
+}
+
+.story-escape-success small {
+  margin-top: 7px;
+  border-radius: 999px;
+  padding: 5px 10px;
+  background: rgba(2, 45, 58, 0.78);
+  font-weight: 900;
+}
+
+.story-tutorial-result-stage {
+  position: absolute;
+  inset: 0;
+  overflow: auto;
+  padding: 18px;
+  color: var(--ink);
+  background:
+    radial-gradient(circle at 10% 0%, rgba(22, 127, 134, 0.16), transparent 35%),
+    #dff2ef;
+}
+
+.story-tutorial-result-stage .try-result-panel.is-embedded {
+  position: relative;
+  left: auto;
+  top: auto;
+  width: 100%;
+  max-height: none;
+  margin: 0 auto;
+  transform: none;
+}
+
 .story-sparkle {
   position: absolute;
   z-index: 10;
@@ -6979,6 +7096,12 @@ body {
 @keyframes story-fish-hover {
   0%, 100% { margin-top: 0; }
   50% { margin-top: -7px; }
+}
+
+@keyframes story-fish-escape {
+  0% { opacity: 0; transform: translate(-180%, 120%) rotate(-10deg) scale(0.78); }
+  55% { opacity: 1; }
+  100% { opacity: 1; transform: translate(-50%, -50%) rotate(-4deg) scale(1.08); }
 }
 
 @keyframes story-sparkle-pop {
