@@ -3143,7 +3143,6 @@ function renderTutorialTryResult(): string {
         embedded: true,
         actionsHtml: `
           <button class="secondary-button story-tutorial-action-target" type="button" data-action="tutorial-continue-result">次のトライ</button>
-          <button class="secondary-button" type="button" disabled>親を交代</button>
         `
       })}
     </div>
@@ -4036,15 +4035,11 @@ function renderRoundActionButtons(): string {
     return '<button class="primary-button" type="button" data-action="reset-game">もう一度遊ぶ</button>';
   }
 
-  const canNextTry = !isGameOver && isTryEnded && currentTry < maxTriesPerParent;
-  const canAdvanceParent = !isGameOver && isTryEnded && currentTry >= maxTriesPerParent;
+  const shouldAdvanceParent = currentTry >= maxTriesPerParent;
+  const action = shouldAdvanceParent ? "advance-parent" : "next-try";
+  const label = shouldAdvanceParent ? "次のトライ（親の交代）" : "次のトライ";
 
-  return `
-    <button class="secondary-button" type="button" data-action="next-try"${canNextTry ? "" : " disabled"}>次のトライ</button>
-    <button class="secondary-button" type="button" data-action="advance-parent"${canAdvanceParent ? "" : " disabled"}>
-      ${completedParentRounds + 1 >= playerCount ? "ゲーム終了" : "親を交代"}
-    </button>
-  `;
+  return `<button class="secondary-button" type="button" data-action="${action}"${isTryEnded ? "" : " disabled"}>${label}</button>`;
 }
 
 function renderMouth(): string {
