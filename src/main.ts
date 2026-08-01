@@ -829,8 +829,6 @@ function stackCardsIntoSchool(
   expectedSourceCardId?: number,
   expectedTargetCardId?: number
 ): void {
-  if (isPlayerWaitingAfterOwnAction(playerId)) return;
-
   const player = getPlayer(playerId);
   if (player.role !== "child" || !isMouthOpen || isTryEnded || isGameOver) return;
 
@@ -4424,7 +4422,7 @@ function renderLog(): string {
 
 function renderChildPanel(player: Player, index: number, variant: "opponent" | "self" = "self"): string {
   const isSelf = variant === "self";
-  const isWaitingAfterOwnPlay = isPlayerWaitingAfterOwnAction(player.id);
+  const isWaitingAfterOwnAction = isPlayerWaitingAfterOwnAction(player.id);
   const label = isSelf ? "あなたの子プレイヤー" : (childLabels[index] ?? `子${index + 1}`);
   const candidates = getPlayerCandidates(player.id);
   const latestCandidate = candidates.at(-1);
@@ -4436,7 +4434,7 @@ function renderChildPanel(player: Player, index: number, variant: "opponent" | "
     : "有効な得点候補なし";
 
   return `
-    <article class="child-panel is-${variant}${isWaitingAfterOwnPlay ? " is-card-waiting" : ""} ${getPlayerToneClass(player.id)}"${isWaitingAfterOwnPlay ? ' aria-busy="true"' : ""}>
+    <article class="child-panel is-${variant}${isWaitingAfterOwnAction ? " is-card-waiting" : ""} ${getPlayerToneClass(player.id)}">
       <header class="child-header">
         <div>
           <p class="section-label">${label}</p>
@@ -4453,7 +4451,7 @@ function renderChildPanel(player: Player, index: number, variant: "opponent" | "
             <div class="child-meta">
               <span>${candidateText}</span>
               <span>山札 ${player.drawPile.length} / 使用済み ${getUsedPhysicalCardCount(player)}</span>
-              <span>同じ2・3を重ねて群れに。2匹の群れには同じ種類をもう1枚追加できます</span>
+              <span>群れ作りには待ち時間がありません。同じ2・3を重ね、2匹の群れには同じ種類をもう1枚追加できます</span>
             </div>
           `
           : `<p class="microcopy">${candidateText}</p>`
@@ -4467,14 +4465,14 @@ function renderHandSlot(player: Player, card: PlayerCard | null, slotIndex: numb
     return '<div class="hand-slot"><div class="play-card empty-card"><span>空</span></div></div>';
   }
 
-  const isWaitingAfterOwnPlay = isPlayerWaitingAfterOwnAction(player.id);
-  const canUse =
+  const isWaitingAfterOwnAction = isPlayerWaitingAfterOwnAction(player.id);
+  const canInteract =
     player.id === localPlayerId &&
     player.role === "child" &&
     isMouthOpen &&
-    !isGameOver &&
-    !isWaitingAfterOwnPlay;
-  const unavailableTitle = isWaitingAfterOwnPlay
+    !isGameOver;
+  const canUse = canInteract && !isWaitingAfterOwnAction;
+  const unavailableTitle = isWaitingAfterOwnAction
     ? "自分がカードを出した後の待ち時間です。少し待つと、また出せます。"
     : "口が開いている間だけ使用できます。";
   const ownPoisonMakesFishIneffective = card.type === "fish" && activePoison?.ownerId === player.id;
@@ -4491,13 +4489,18 @@ function renderHandSlot(player: Player, card: PlayerCard | null, slotIndex: numb
     ? card.schoolBaseValue ?? (card.value === 2 || card.value === 3 ? card.value : null)
     : null;
   const canStack =
-    canUse &&
+    canInteract &&
     card.type === "fish" &&
     stackBaseValue !== null &&
-    (card.schoolSize === undefined || card.schoolSize === 2);
+    (card.schoolSize === undefined || card.schoolSize === 2) &&
+    player.faceUp.some((targetCard, targetSlotIndex) =>
+      targetSlotIndex !== slotIndex && targetCard !== null && canStackFishCards(card, targetCard)
+    );
   const stackHint = card.type === "fish" && card.schoolSize === 2 && stackBaseValue !== null
     ? `同じ${stackBaseValue}を追加すると、3匹・強さ${stackBaseValue * 3}の群れになります。`
     : "同じ数字のカードへドラッグするか、Sキーで2匹の群れにできます。";
+  const cardAction = canUse ? "play-card" : canStack ? "stack-only" : "play-card";
+  const cardActionLabel = canUse ? playLabel : canStack ? `群れを作る。${stackHint}` : playLabel;
   const cardClass = card.type === "poison"
     ? "poison-hand-card"
     : `fish-hand-card value-${card.value}${isSchool ? " is-school" : ""}`;
@@ -4514,15 +4517,15 @@ function renderHandSlot(player: Player, card: PlayerCard | null, slotIndex: numb
       <button
         class="play-card ${cardClass}"
         type="button"
-        data-action="play-card"
+        data-action="${cardAction}"
         data-player-id="${player.id}"
         data-slot-index="${slotIndex}"
         data-card-id="${card.id}"
-        aria-label="${playLabel}"
+        aria-label="${cardActionLabel}"
         ${canStack ? `data-stack-value="${stackBaseValue}"` : ""}
         ${canStack ? 'aria-keyshortcuts="S"' : ""}
-        ${canUse ? "" : " disabled"}
-        title="${canUse ? `${playLabel}${canStack ? `。${stackHint}` : ""}` : unavailableTitle}"
+        ${canUse || canStack ? "" : " disabled"}
+        title="${canUse ? `${playLabel}${canStack ? `。${stackHint}` : ""}` : canStack ? `待ち時間中でも群れを作れます。${stackHint}` : unavailableTitle}"
       >
         ${isSchool ? '<span class="school-card-layer" aria-hidden="true"></span>' : ""}
         ${cardArtwork}
