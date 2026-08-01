@@ -6,6 +6,17 @@ const rootDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const distDir = resolve(rootDir, "dist");
 const htmlPath = resolve(distDir, "index.html");
 const inlinedAssetPaths = [];
+const unusedPngAssetPaths = [
+  "assets/creatures/creature-4-octopus.png",
+  "assets/creatures/fish-2-sardine.png",
+  "assets/creatures/fish-3.png",
+  "assets/creatures/fish-5-shark.png",
+  "assets/creatures/fish-poison.png",
+  "assets/whale/closed.png",
+  "assets/whale/fed.png",
+  "assets/whale/open.png",
+  "assets/whale/poisoned.png"
+].map((assetPath) => resolve(distDir, assetPath));
 
 let html = await readFile(htmlPath, "utf8");
 
@@ -13,7 +24,7 @@ html = await inlineStylesheet(html);
 html = await inlineModuleScript(html);
 
 await writeFile(htmlPath, html, "utf8");
-await Promise.all(inlinedAssetPaths.map((assetPath) => unlink(assetPath)));
+await Promise.all([...inlinedAssetPaths, ...unusedPngAssetPaths].map((assetPath) => unlink(assetPath)));
 
 const serverDir = resolve(distDir, "server");
 await mkdir(serverDir, { recursive: true });
