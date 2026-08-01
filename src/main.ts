@@ -99,7 +99,6 @@ type TutorialVisual =
   | "finale";
 type TutorialStep = {
   chapter: string;
-  kicker: string;
   title: string;
   dialogue: string;
   helper: string;
@@ -237,16 +236,14 @@ const ownActionWaitDurationMs = mouthFishMotionDurationMs + ownActionWaitExtensi
 const tutorialSteps: readonly TutorialStep[] = [
   {
     chapter: "子の冒険",
-    kicker: "STORY 1 · ごはんを見つけよう",
     title: "くじらの入り江へ",
-    dialogue: "こんにちは！ あんなところに、おいしそうなご飯がありますね。魚を出して食べに行きましょう。",
+    dialogue: "魚2を出して、ご飯を食べに行こう！",
     helper: "光っている魚2をタップしてください。",
     visual: "first-meal",
     action: "play-fish-2"
   },
   {
     chapter: "子の冒険",
-    kicker: "はじめての捕食",
     title: "ごちそうを食べました",
     dialogue: "おいしかったですね！",
     helper: "魚2は餌1を食べ、そのまま口の中を泳ぎます。",
@@ -255,138 +252,123 @@ const tutorialSteps: readonly TutorialStep[] = [
   },
   {
     chapter: "子の冒険",
-    kicker: "敵の魚がやってきた",
     title: "魚2が食べられた！",
-    dialogue: "あ！ お魚が食べられてしまいました。",
-    helper: "魚3は魚2より強いため、魚2が食べた餌ごと引き継ぎます。",
+    dialogue: "あっ、魚2が食べられた！",
+    helper: "大きい魚は小さい魚と、その魚が捕まえた獲物を引き継ぎます。",
     visual: "enemy-ambush",
     autoAdvanceMs: 5000
   },
   {
     chapter: "子の冒険",
-    kicker: "反撃のチャンス",
     title: "もっと大きな魚を！",
-    dialogue: "より大きい魚を出して、あの魚を食べに行きましょう！",
+    dialogue: "魚4で食べ返そう！",
     helper: "光っている魚4をタップしてください。",
     visual: "first-counterattack",
     action: "play-fish-4"
   },
   {
     chapter: "子の冒険",
-    kicker: "捕食成功",
     title: "今度はこちらの番！",
-    dialogue: "魚を食べることができました！ 魚は数字が同じかそれよりも大きい数の数字の魚を出すことで食べることができます。",
-    helper: "強い魚ほど頼もしいですが、さらに大きな魚には食べられてしまいます。",
+    dialogue: "魚を食べることができました！",
+    helper: "同じ数字か、それより大きい魚を出すと食べられます。さらに大きな魚には食べられます。",
     visual: "first-victory",
     autoAdvanceMs: 4500
   },
   {
     chapter: "子の冒険",
-    kicker: "トライ終了",
     title: "ここは大きな口の中！",
-    dialogue: "うわ！！びっくりしましたね。\nここは大きな魚の口の中だったのですね！\n\n獲物を捕まえたら食べられてしまう前に逃げるようにしましょう！",
-    helper: "次のトライでは、同じ魚4で獲物を捕まえ、逃げる操作まで練習します。",
+    dialogue: "うわ！ ここは大きな魚の口の中！",
+    helper: "獲物を捕まえたら、食べられる前に逃げましょう。次のトライで練習します。",
     visual: "mouth-closed",
     nextLabel: "逃げる練習へ"
   },
   {
     chapter: "子の冒険",
-    kicker: "STORY 1.5 · 逃げる練習",
     title: "もう一度、魚4を出そう",
-    dialogue: "さあ、もう一度です。魚3が、魚2と餌1を持って泳いでいます。",
-    helper: "光っている魚4をタップして、魚3を食べてください。",
+    dialogue: "もう一度、魚4を出そう！",
+    helper: "魚3が魚2と餌1を持っています。光っている魚4をタップしてください。",
     visual: "escape-retry",
     action: "play-fish-4"
   },
   {
     chapter: "子の冒険",
-    kicker: "逃げるチャンス",
     title: "食べられる前に逃げよう",
-    dialogue: "魚4が魚3を食べ、逃げる権利を手に入れました。獲物を捕まえた魚が口の中にいる間は、手札1枚を裏向きで使って逃げられます。",
-    helper: "手札の魚2の下にある「裏で逃げる 4点」をタップしてください。",
+    dialogue: "食べられる前に逃げよう！",
+    helper: "獲物を捕まえた魚は、手札1枚を裏向きに使って逃げられます。「裏で逃げる 4点」をタップしてください。",
     visual: "escape-ready",
     action: "escape"
   },
   {
     chapter: "子の冒険",
-    kicker: "逃走成功",
     title: "ヒューん！ 逃げ切りました",
-    dialogue: "今度は食べられてしまう前に、逃げることができました！",
-    helper: "相手の魚3は3点、親の餌1は1点。自分の魚2・魚4と逃走用カードは数えないので、3＋1＝4点です。",
+    dialogue: "逃げ切りました！",
+    helper: "相手の魚3＋親の餌1＝4点です。自分の魚と逃走用カードは数えません。",
     visual: "escape-success",
     nextLabel: "リザルトを見る"
   },
   {
     chapter: "子の冒険",
-    kicker: "この回の結果",
     title: "4点を獲得！",
-    dialogue: "逃げに成功した瞬間、4点が確定して、このトライは終了します。",
-    helper: "通常のゲームでも、トライ終了後に今回の獲得点・合計点・カードが出た順番をリザルトで確認できます。",
+    dialogue: "4点獲得！",
+    helper: "逃げると得点が確定します。獲得点・合計点・カードの順番はリザルトで確認できます。",
     visual: "escape-result",
     action: "continue-result"
   },
   {
     chapter: "親の冒険",
-    kicker: "STORY 2 · 親が交代",
     title: "次はあなたが親！",
-    dialogue: "次はあなたが親の番です。\n大きな魚を操作して、獲物をたくさん捕まえましょう",
-    helper: "最初は口を閉じています。光っている「口を開く」をタップしてください。",
+    dialogue: "次はあなたが親です！",
+    helper: "大きな魚を操作して獲物を捕まえます。光っている「口を開く」をタップしてください。",
     visual: "parent-view",
     action: "open-mouth"
   },
   {
     chapter: "親の冒険",
-    kicker: "餌を求めて",
     title: "魚が飛び込んできた！",
-    dialogue: "餌を求めて、魚2、魚3、魚4が飛び込んできました。\nそろそろ口を閉じてみましょう。",
-    helper: "「口を閉じる」をタップしてください。",
+    dialogue: "そろそろ口を閉じよう！",
+    helper: "魚2・3・4が飛び込みました。「口を閉じる」をタップしてください。",
     visual: "close-moment",
     action: "close-mouth",
     actionDelayMs: 1900
   },
   {
     chapter: "親の冒険",
-    kicker: "口を閉じる、その瞬間",
     title: "毒魚が飛び込んできた！",
-    dialogue: "口を閉じようとした、その瞬間――毒魚が飛び込んできました！\n大きな魚は毒魚まで食べて、苦しんでいます。",
-    helper: "毒魚まで一緒に食べてしまう、失敗の流れを見てみましょう。",
+    dialogue: "毒魚まで食べてしまった！",
+    helper: "毒魚が入ったまま口を閉じると、親は0点です。失敗の流れを確認しましょう。",
     visual: "poison-warning",
     action: "continue-parent",
     actionDelayMs: 2800
   },
   {
     chapter: "親の冒険",
-    kicker: "食べる直前へ戻ろう",
     title: "毒魚は吐き出そう",
-    dialogue: "残念！間違えて毒魚を食べてしまいましたね。\n毒魚が入ってきたときには吐き出して食べないようにしましょう。",
+    dialogue: "毒魚は吐き出そう！",
     helper: "食べる直前まで戻りました。光っている「毒魚を取り除く」をタップしてください。",
     visual: "poison-practice",
     action: "remove-poison"
   },
   {
     chapter: "親の冒険",
-    kicker: "危機を回避",
     title: "上手に吐き出せました",
-    dialogue: "毒魚を取り除くことができました！ 魚だけになったのを確かめてから、口を閉じましょう。",
-    helper: "毒魚を取り除く時間に制限はありません。慌てず、口の中をよく見ましょう。",
+    dialogue: "上手に吐き出せました！",
+    helper: "毒魚を取り除く時間に制限はありません。魚だけになったら口を閉じましょう。",
     visual: "poison-cleared",
     nextLabel: "特別ルールへ"
   },
   {
     chapter: "海の手引き",
-    kicker: "最後に覚えること",
     title: "逃げる・毒魚・魚群",
-    dialogue: "入り江で生き残るための、特別な作戦も覚えておきましょう。",
+    dialogue: "特別なルールを確認しよう！",
     helper: "逃げる成功で得点を確定。毒魚は早めに取り除き、同じ魚2・魚3は群れにできます。",
     visual: "rule-cards",
     nextLabel: "冒険のまとめへ"
   },
   {
     chapter: "冒険のはじまり",
-    kicker: "READY TO PLAY",
     title: "親でも子でも得点しよう",
-    dialogue: "全員が1回ずつ親を担当し、最後に合計得点がいちばん高い人の勝ちです。",
-    helper: "1人の親ラウンドは3トライ。入り江の流れを読み、最高得点を目指しましょう！",
+    dialogue: "最高得点をめざそう！",
+    helper: "全員が1回ずつ親を担当します。親1人につき3トライで、合計得点が一番高い人の勝ちです。",
     visual: "finale",
     nextLabel: "チュートリアルを終える"
   }
@@ -2715,9 +2697,7 @@ function scheduleTutorialActionUnlock(): void {
     actionTarget.disabled = false;
     actionTarget.removeAttribute("data-tutorial-delayed-action");
     const actionHint = appRoot.querySelector<HTMLElement>(".story-action-hint");
-    const helperLabel = appRoot.querySelector<HTMLElement>(".story-helper strong");
     if (actionHint) actionHint.textContent = "光っているところをタップ";
-    if (helperLabel) helperLabel.textContent = "YOUR TURN";
     if (shellHadFocus) actionTarget.focus({ preventScroll: true });
   };
   const remaining = Math.max(0, tutorialActionUnlockAt - Date.now());
@@ -2758,8 +2738,8 @@ function renderTutorialScreen(): string {
         class="story-tutorial-shell scene-${step.visual}"
         role="dialog"
         aria-modal="true"
-        aria-labelledby="tutorial-title"
-        aria-describedby="tutorial-dialogue"
+        aria-label="遊び方チュートリアル"
+        aria-describedby="tutorial-dialogue tutorial-helper"
         tabindex="-1"
       >
         <header class="story-tutorial-header">
@@ -2782,19 +2762,13 @@ function renderTutorialScreen(): string {
           <section class="story-tutorial-world" aria-label="${step.title}の物語場面">
             ${renderTutorialVisual(step.visual, waitsForDelayedAction)}
           </section>
-
-          <section class="story-tutorial-narrative" aria-live="polite">
-            <p class="story-tutorial-kicker">${step.kicker}</p>
-            <h1 id="tutorial-title">${step.title}</h1>
-            <div class="story-dialogue" id="tutorial-dialogue">
-              <span aria-hidden="true">“</span>
-              <p>${renderTutorialDialogue(step.dialogue)}</p>
-            </div>
-            <p class="story-helper"><strong>${waitsForDelayedAction ? "WATCH" : waitsForAction ? "YOUR TURN" : step.chapter === "海の手引き" ? "MEMO" : "POINT"}</strong><span>${step.helper}</span></p>
-          </section>
+          <aside class="story-tutorial-popup" id="tutorial-dialogue" aria-live="polite">
+            <p>${renderTutorialDialogue(step.dialogue)}</p>
+          </aside>
         </div>
 
         <footer class="story-tutorial-actions">
+          <p class="story-tutorial-note" id="tutorial-helper">${escapeHtml(step.helper)}</p>
           <button class="secondary-button" type="button" data-action="tutorial-previous" ${isFirst ? "disabled" : ""}>前へ</button>
           <span class="story-action-hint">
             ${waitsForDelayedAction ? "アニメーションのあとに操作できます" : waitsForAction ? "光っているところをタップ" : advancesAutomatically ? "物語が進んでいます…" : "← → キーでも移動できます"}
@@ -4201,7 +4175,7 @@ function renderMouthFishActor(card: BoxCard): string {
 function renderMouthFishVisual(card: BaitBoxCard | FishBoxCard | PoisonBoxCard): string {
   if (card.type === "bait") {
     return `
-      <span class="bait-sprite" aria-hidden="true"><i></i><i></i><i></i></span>
+      <span class="bait-sprite" aria-hidden="true"><i></i></span>
       <span class="mouth-fish-value">1</span>
     `;
   }
