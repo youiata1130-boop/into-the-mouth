@@ -78,7 +78,7 @@ type CpuTuning = {
   closeScore: number;
   delays: Record<CpuDelayKind, readonly [number, number]>;
 };
-type TutorialAction = "play-fish-2" | "play-fish-4" | "escape" | "continue-result" | "close-mouth" | "remove-poison";
+type TutorialAction = "play-fish-2" | "play-fish-4" | "escape" | "continue-result" | "continue-parent" | "open-mouth" | "close-mouth" | "remove-poison";
 type TutorialVisual =
   | "first-meal"
   | "first-feast"
@@ -105,6 +105,7 @@ type TutorialStep = {
   helper: string;
   visual: TutorialVisual;
   action?: TutorialAction;
+  actionDelayMs?: number;
   autoAdvanceMs?: number;
   nextLabel?: string;
 };
@@ -326,48 +327,50 @@ const tutorialSteps: readonly TutorialStep[] = [
   },
   {
     chapter: "親の冒険",
-    kicker: "STORY 2 · 親の役目",
-    title: "口を閉じるタイミング",
-    dialogue: "口の中に魚がたくさん入ってきたら、口を閉じましょう。",
-    helper: "欲張りすぎず、今いる魚を得点にする瞬間を見極めます。",
+    kicker: "STORY 2 · 親が交代",
+    title: "次はあなたが親！",
+    dialogue: "次はあなたが親の番です。\n大きな魚を操作して、獲物をたくさん捕まえましょう",
+    helper: "最初は口を閉じています。光っている「口を開く」をタップしてください。",
     visual: "parent-view",
-    nextLabel: "タイミングを見る"
+    action: "open-mouth"
   },
   {
     chapter: "親の冒険",
-    kicker: "魚が集まった",
-    title: "いまだ！",
-    dialogue: "たくさんの魚が口に入りました。今なら高得点を狙えそうです。",
+    kicker: "餌を求めて",
+    title: "魚が飛び込んできた！",
+    dialogue: "餌を求めて、魚2、魚3、魚4が飛び込んできました。\nそろそろ口を閉じてみましょう。",
     helper: "「口を閉じる」をタップしてください。",
     visual: "close-moment",
-    action: "close-mouth"
+    action: "close-mouth",
+    actionDelayMs: 1900
   },
   {
     chapter: "親の冒険",
-    kicker: "毒魚に注意",
-    title: "すべりこんだ毒魚",
-    dialogue: "口を閉じるその瞬間、毒魚が入ってきました。毒魚には気を付けましょう。",
-    helper: "有効な毒魚は閉じる前に取り除きます。残したまま閉じると、毒魚の持ち主が10点、親は0点です。",
+    kicker: "口を閉じる、その瞬間",
+    title: "毒魚が飛び込んできた！",
+    dialogue: "口を閉じようとした、その瞬間――毒魚が飛び込んできました！\n大きな魚は毒魚まで食べて、苦しんでいます。",
+    helper: "毒魚まで一緒に食べてしまう、失敗の流れを見てみましょう。",
     visual: "poison-warning",
-    nextLabel: "取り除く練習へ"
+    action: "continue-parent",
+    actionDelayMs: 2800
   },
   {
     chapter: "親の冒険",
-    kicker: "もう一度やってみよう",
-    title: "毒魚を見つけた！",
-    dialogue: "今度は口を閉じる前に毒魚を見つけました。親は時間制限なく毒魚を取り除けます。",
-    helper: "光っている「毒魚を取り除く」ボタンをタップしてください。",
+    kicker: "食べる直前へ戻ろう",
+    title: "毒魚は吐き出そう",
+    dialogue: "残念！間違えて毒魚を食べてしまいましたね。\n毒魚が入ってきたときには吐き出して食べないようにしましょう。",
+    helper: "食べる直前まで戻りました。光っている「毒魚を取り除く」をタップしてください。",
     visual: "poison-practice",
     action: "remove-poison"
   },
   {
     chapter: "親の冒険",
     kicker: "危機を回避",
-    title: "ふう、間に合いました",
-    dialogue: "これで毒魚の効果はなくなりました。魚が集まったら、あらためて口を閉じましょう。",
+    title: "上手に吐き出せました",
+    dialogue: "毒魚を取り除くことができました！ 魚だけになったのを確かめてから、口を閉じましょう。",
     helper: "毒魚を取り除く時間に制限はありません。慌てず、口の中をよく見ましょう。",
     visual: "poison-cleared",
-    autoAdvanceMs: 4500
+    nextLabel: "特別ルールへ"
   },
   {
     chapter: "海の手引き",
@@ -450,6 +453,9 @@ let suppressClickTimerId: number | null = null;
 let tutorialStep: number | null = null;
 let tutorialReturnToRules = false;
 let tutorialAutoTimerId: number | null = null;
+let tutorialActionUnlockTimerId: number | null = null;
+let tutorialActionUnlockStep: number | null = null;
+let tutorialActionUnlockAt: number | null = null;
 
 const simpleActions: Record<string, () => void> = {
   "open-tutorial": openTutorial,
@@ -459,6 +465,8 @@ const simpleActions: Record<string, () => void> = {
   "tutorial-play-fish-4": playTutorialFish4,
   "tutorial-escape": escapeTutorialFish,
   "tutorial-continue-result": continueTutorialResult,
+  "tutorial-continue-parent": continueTutorialParent,
+  "tutorial-open-mouth": openTutorialMouth,
   "tutorial-close-mouth": closeTutorialMouth,
   "tutorial-remove-poison": removeTutorialPoison,
   "close-tutorial": closeTutorial,
@@ -2344,10 +2352,11 @@ function render(): void {
   if (tutorialStep !== null) {
     appRoot.innerHTML = renderTutorialScreen();
     const tutorialFocusTarget = appRoot.querySelector<HTMLElement>(".story-tutorial-result-stage .try-result-panel")
-      ?? appRoot.querySelector<HTMLElement>(".story-tutorial-action-target")
+      ?? appRoot.querySelector<HTMLElement>(".story-tutorial-action-target:not(:disabled)")
       ?? appRoot.querySelector<HTMLElement>(".story-tutorial-shell");
     tutorialFocusTarget?.focus({ preventScroll: true });
     scheduleTutorialAutoAdvance();
+    scheduleTutorialActionUnlock();
     return;
   }
 
@@ -2575,6 +2584,7 @@ function openTutorial(): void {
   tutorialReturnToRules = appRoot.querySelector<HTMLDetailsElement>(".rules-panel")?.open ?? false;
   clearNpcTimers();
   clearTutorialAutoAdvance();
+  resetTutorialActionUnlock();
   tutorialStep = 0;
   render();
 }
@@ -2582,6 +2592,7 @@ function openTutorial(): void {
 function closeTutorial(): void {
   const shouldRestoreRules = tutorialReturnToRules;
   clearTutorialAutoAdvance();
+  resetTutorialActionUnlock();
   tutorialReturnToRules = false;
   tutorialStep = null;
   render();
@@ -2634,6 +2645,16 @@ function continueTutorialResult(): void {
   setTutorialStep(tutorialStep + 1);
 }
 
+function continueTutorialParent(): void {
+  if (tutorialStep === null || tutorialSteps[tutorialStep].action !== "continue-parent") return;
+  setTutorialStep(tutorialStep + 1);
+}
+
+function openTutorialMouth(): void {
+  if (tutorialStep === null || tutorialSteps[tutorialStep].action !== "open-mouth") return;
+  setTutorialStep(tutorialStep + 1);
+}
+
 function closeTutorialMouth(): void {
   if (tutorialStep === null || tutorialSteps[tutorialStep].action !== "close-mouth") return;
   setTutorialStep(tutorialStep + 1);
@@ -2646,6 +2667,7 @@ function removeTutorialPoison(): void {
 
 function setTutorialStep(nextStep: number): void {
   clearTutorialAutoAdvance();
+  resetTutorialActionUnlock();
   tutorialStep = Math.max(0, Math.min(tutorialSteps.length - 1, nextStep));
   render();
 }
@@ -2672,6 +2694,56 @@ function clearTutorialAutoAdvance(): void {
   tutorialAutoTimerId = null;
 }
 
+function scheduleTutorialActionUnlock(): void {
+  clearTutorialActionUnlockTimer();
+  if (tutorialStep === null) return;
+
+  const scheduledStep = tutorialStep;
+  const step = tutorialSteps[scheduledStep];
+  if (step.actionDelayMs === undefined) return;
+
+  const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (tutorialActionUnlockStep !== scheduledStep || tutorialActionUnlockAt === null) {
+    tutorialActionUnlockStep = scheduledStep;
+    tutorialActionUnlockAt = Date.now() + (reduceMotion ? 0 : step.actionDelayMs);
+  }
+
+  const unlock = (): void => {
+    tutorialActionUnlockTimerId = null;
+    if (tutorialStep !== scheduledStep) return;
+    const shellHadFocus = document.activeElement?.classList.contains("story-tutorial-shell") ?? false;
+    const actionTarget = appRoot.querySelector<HTMLButtonElement>("button[data-tutorial-delayed-action]");
+    if (!actionTarget) return;
+    actionTarget.disabled = false;
+    actionTarget.removeAttribute("data-tutorial-delayed-action");
+    const actionHint = appRoot.querySelector<HTMLElement>(".story-action-hint");
+    const helperLabel = appRoot.querySelector<HTMLElement>(".story-helper strong");
+    if (actionHint) actionHint.textContent = "光っているところをタップ";
+    if (helperLabel) helperLabel.textContent = "YOUR TURN";
+    if (shellHadFocus) actionTarget.focus({ preventScroll: true });
+  };
+  const remaining = Math.max(0, tutorialActionUnlockAt - Date.now());
+
+  if (remaining === 0) {
+    unlock();
+    return;
+  }
+
+  tutorialActionUnlockTimerId = window.setTimeout(unlock, remaining);
+}
+
+function clearTutorialActionUnlockTimer(): void {
+  if (tutorialActionUnlockTimerId === null) return;
+  window.clearTimeout(tutorialActionUnlockTimerId);
+  tutorialActionUnlockTimerId = null;
+}
+
+function resetTutorialActionUnlock(): void {
+  clearTutorialActionUnlockTimer();
+  tutorialActionUnlockStep = null;
+  tutorialActionUnlockAt = null;
+}
+
 function renderTutorialScreen(): string {
   const stepIndex = tutorialStep ?? 0;
   const step = tutorialSteps[stepIndex];
@@ -2679,6 +2751,7 @@ function renderTutorialScreen(): string {
   const isLast = stepIndex === tutorialSteps.length - 1;
   const waitsForAction = step.action !== undefined;
   const advancesAutomatically = step.autoAdvanceMs !== undefined;
+  const waitsForDelayedAction = step.actionDelayMs !== undefined;
   const isResultStep = step.visual === "escape-result";
 
   return `
@@ -2709,7 +2782,7 @@ function renderTutorialScreen(): string {
 
         <div class="story-tutorial-body${isResultStep ? " is-result-step" : ""}">
           <section class="story-tutorial-world" aria-label="${step.title}の物語場面">
-            ${renderTutorialVisual(step.visual)}
+            ${renderTutorialVisual(step.visual, waitsForDelayedAction)}
           </section>
 
           <section class="story-tutorial-narrative" aria-live="polite">
@@ -2719,14 +2792,14 @@ function renderTutorialScreen(): string {
               <span aria-hidden="true">“</span>
               <p>${renderTutorialDialogue(step.dialogue)}</p>
             </div>
-            <p class="story-helper"><strong>${waitsForAction ? "YOUR TURN" : step.chapter === "海の手引き" ? "MEMO" : "POINT"}</strong><span>${step.helper}</span></p>
+            <p class="story-helper"><strong>${waitsForDelayedAction ? "WATCH" : waitsForAction ? "YOUR TURN" : step.chapter === "海の手引き" ? "MEMO" : "POINT"}</strong><span>${step.helper}</span></p>
           </section>
         </div>
 
         <footer class="story-tutorial-actions">
           <button class="secondary-button" type="button" data-action="tutorial-previous" ${isFirst ? "disabled" : ""}>前へ</button>
           <span class="story-action-hint">
-            ${waitsForAction ? "光っているところをタップ" : advancesAutomatically ? "物語が進んでいます…" : "← → キーでも移動できます"}
+            ${waitsForDelayedAction ? "アニメーションのあとに操作できます" : waitsForAction ? "光っているところをタップ" : advancesAutomatically ? "物語が進んでいます…" : "← → キーでも移動できます"}
           </span>
           ${waitsForAction
             ? '<span class="story-action-spacer" aria-hidden="true"></span>'
@@ -2741,7 +2814,7 @@ function renderTutorialDialogue(dialogue: string): string {
   return escapeHtml(dialogue).replace(/\n/g, "<br>");
 }
 
-function renderTutorialVisual(visual: TutorialVisual): string {
+function renderTutorialVisual(visual: TutorialVisual, actionDelayed = false): string {
   if (visual === "first-meal") {
     return renderStoryWhaleScene(
       "open",
@@ -2836,11 +2909,17 @@ function renderTutorialVisual(visual: TutorialVisual): string {
 
   if (visual === "parent-view") {
     return renderStoryWhaleScene(
-      "open",
+      "closed",
       "is-parent-view",
-      `${renderStoryFishToken(2, "is-upper-left")}${renderStoryFishToken(3, "is-upper-right")}${renderStoryFishToken(4, "is-lower-left")}${renderStoryFishToken(5, "is-lower-right")}`,
-      '<span class="story-parent-badge">あなたは親</span>',
-      "親の目の前に、たくさんの魚が集まっています。"
+      "",
+      `
+        <span class="story-parent-badge">あなたは親</span>
+        <button class="story-open-mouth-button story-tutorial-action-target" type="button" data-action="tutorial-open-mouth">
+          <span>最初の行動</span>
+          <strong>口を開く</strong>
+        </button>
+      `,
+      "親が交代し、あなたが閉じた口の大きな魚を操作します。"
     );
   }
 
@@ -2848,39 +2927,31 @@ function renderTutorialVisual(visual: TutorialVisual): string {
     return renderStoryWhaleScene(
       "open",
       "is-close-moment",
-      `${renderStoryFishToken(2, "is-upper-left")}${renderStoryFishToken(3, "is-upper-right")}${renderStoryFishToken(4, "is-lower-left")}${renderStoryFishToken(5, "is-lower-right")}`,
+      `${renderStoryBait("is-center")}${renderStoryFishToken(2, "is-upper-left is-parent-arriving arrival-1")}${renderStoryFishToken(3, "is-upper-right is-parent-arriving arrival-2")}${renderStoryFishToken(4, "is-lower-left is-parent-arriving arrival-3")}`,
       `
-        <button class="story-close-mouth-button story-tutorial-action-target" type="button" data-action="tutorial-close-mouth">
-          <span>いまだ！</span>
+        <button class="story-close-mouth-button story-tutorial-action-target" type="button" data-action="tutorial-close-mouth"${actionDelayed ? ' disabled data-tutorial-delayed-action="true"' : ""}>
+          <span>そろそろ！</span>
           <strong>口を閉じる</strong>
         </button>
       `,
-      "魚がたくさん集まった、口を閉じるチャンスです。"
+      "口を開くと、餌を求めて魚2、魚3、魚4の順に飛び込みました。"
     );
   }
 
-  if (visual === "poison-warning") {
-    return renderStoryWhaleScene(
-      "poisoned",
-      "is-poisoned",
-      "",
-      `${renderStoryPoisonToken("is-arriving")}<div class="story-poison-warning"><span aria-hidden="true">!</span><strong>毒魚は閉じる前に取り除く</strong></div>`,
-      "口を閉じる直前に毒魚がすべりこみました。"
-    );
-  }
+  if (visual === "poison-warning") return renderStoryPoisonBiteFailure(actionDelayed);
 
   if (visual === "poison-practice") {
     return renderStoryWhaleScene(
       "open",
       "is-poison-practice",
-      `${renderStoryFishToken(3, "is-upper-left")}${renderStoryFishToken(4, "is-lower-right")}${renderStoryPoisonToken("is-in-mouth")}`,
+      `${renderStoryBait("is-center")}${renderStoryFishToken(2, "is-upper-left")}${renderStoryFishToken(3, "is-upper-right")}${renderStoryFishToken(4, "is-lower-left")}${renderStoryPoisonToken("is-in-mouth is-training-poison")}`,
       `
         <button class="story-remove-poison-button story-tutorial-action-target" type="button" data-action="tutorial-remove-poison">
           <span aria-hidden="true">!</span>
           <strong>毒魚を取り除く</strong>
         </button>
       `,
-      "口を閉じる前に、口の中の毒魚を取り除く練習です。"
+      "口を閉じる直前まで戻り、口の中の毒魚を取り除く練習です。"
     );
   }
 
@@ -2888,9 +2959,9 @@ function renderTutorialVisual(visual: TutorialVisual): string {
     return renderStoryWhaleScene(
       "open",
       "is-poison-cleared",
-      `${renderStoryFishToken(3, "is-upper-left")}${renderStoryFishToken(4, "is-lower-right")}`,
-      '<div class="story-poison-cleared"><span aria-hidden="true">✓</span><strong>毒魚を取り除きました</strong></div>',
-      "毒魚を取り除き、口の中が安全になりました。"
+      `${renderStoryBait("is-center")}${renderStoryFishToken(2, "is-upper-left")}${renderStoryFishToken(3, "is-upper-right")}${renderStoryFishToken(4, "is-lower-left")}`,
+      `${renderStoryPoisonToken("is-spit-out")}<div class="story-poison-cleared"><span aria-hidden="true">✓</span><strong>毒魚を吐き出しました</strong></div>`,
+      "毒魚を口の外へ吐き出し、口の中には魚2、魚3、魚4と餌だけが残りました。"
     );
   }
 
@@ -2905,8 +2976,38 @@ function renderTutorialVisual(visual: TutorialVisual): string {
   );
 }
 
+function renderStoryPoisonBiteFailure(actionDelayed: boolean): string {
+  return `
+    <div class="story-ocean-scene is-poison-bite-cinematic">
+      <div class="story-light-rays" aria-hidden="true"></div>
+      <span class="story-bubble bubble-a" aria-hidden="true"></span>
+      <span class="story-bubble bubble-b" aria-hidden="true"></span>
+      <span class="story-bubble bubble-c" aria-hidden="true"></span>
+      <div class="story-whale is-open story-poison-bite-open">
+        <img src="${whaleArtPaths.open}" alt="" aria-hidden="true">
+        <div class="story-mouth-layer">
+          ${renderStoryBait("is-center")}
+          ${renderStoryFishToken(2, "is-upper-left")}
+          ${renderStoryFishToken(3, "is-upper-right")}
+          ${renderStoryFishToken(4, "is-lower-left")}
+        </div>
+      </div>
+      <div class="story-whale is-poisoned story-poison-bite-closed">
+        <img src="${whaleArtPaths.poisoned}" alt="" aria-hidden="true">
+      </div>
+      ${renderStoryPoisonToken("is-diving-in")}
+      <div class="story-poison-bite-caption" aria-hidden="true">
+        <strong>パクン！</strong>
+        <span>毒魚まで食べてしまった！</span>
+      </div>
+      <button class="story-cinematic-continue-button story-tutorial-action-target" type="button" data-action="tutorial-continue-parent"${actionDelayed ? ' disabled data-tutorial-delayed-action="true"' : ""}>取り除く練習へ</button>
+      <p class="visually-hidden">口を閉じる瞬間に毒魚が飛び込み、大きな魚が毒魚まで食べて苦しんでいます。</p>
+    </div>
+  `;
+}
+
 function renderStoryWhaleScene(
-  state: "open" | "fed" | "poisoned",
+  state: "closed" | "open" | "fed" | "poisoned",
   sceneClass: string,
   mouthContent: string,
   foregroundContent: string,
@@ -2916,7 +3017,9 @@ function renderStoryWhaleScene(
     ? whaleArtPaths.open
     : state === "poisoned"
       ? whaleArtPaths.poisoned
-      : whaleArtPaths.fed;
+      : state === "closed"
+        ? whaleArtPaths.closed
+        : whaleArtPaths.fed;
 
   return `
     <div class="story-ocean-scene ${sceneClass}">

@@ -6280,6 +6280,7 @@ body {
   filter: drop-shadow(0 20px 38px rgba(0, 25, 40, 0.34));
 }
 
+.story-whale.is-closed > img,
 .story-whale.is-fed > img,
 .story-whale.is-poisoned > img {
   left: 50%;
@@ -6431,6 +6432,31 @@ body {
 
 .story-fish-token.is-enemy {
   animation: story-fish-hover 2.3s ease-in-out infinite;
+}
+
+.story-ocean-scene.is-close-moment .story-fish-token.is-parent-arriving {
+  opacity: 0;
+  animation: story-parent-fish-arrive 720ms cubic-bezier(0.18, 0.82, 0.26, 1) both;
+}
+
+.story-ocean-scene.is-close-moment .story-fish-token.is-parent-arriving.arrival-1 {
+  animation-delay: 120ms;
+}
+
+.story-ocean-scene.is-close-moment .story-fish-token.is-parent-arriving.arrival-2 {
+  animation-delay: 620ms;
+}
+
+.story-ocean-scene.is-close-moment .story-fish-token.is-parent-arriving.arrival-3 {
+  left: 30%;
+  top: 58%;
+  animation-delay: 1120ms;
+}
+
+.story-ocean-scene.is-poison-practice .story-fish-token.is-lower-left,
+.story-ocean-scene.is-poison-cleared .story-fish-token.is-lower-left {
+  left: 30%;
+  top: 58%;
 }
 
 .story-bait-token {
@@ -6751,7 +6777,9 @@ body {
   font-weight: 1000;
 }
 
+.story-open-mouth-button,
 .story-close-mouth-button,
+.story-cinematic-continue-button,
 .story-remove-poison-button {
   position: absolute;
   z-index: 14;
@@ -6770,17 +6798,44 @@ body {
   cursor: pointer;
   box-shadow: 0 0 0 8px rgba(255, 215, 94, 0.17), 0 15px 28px rgba(0, 27, 39, 0.45);
   transform: translateX(-50%);
+  transition: opacity 180ms ease;
   animation: story-action-pulse 1.15s ease-in-out infinite;
 }
 
+.story-open-mouth-button span,
 .story-close-mouth-button span {
   font-size: 0.68rem;
   font-weight: 1000;
 }
 
+.story-open-mouth-button strong,
 .story-close-mouth-button strong,
 .story-remove-poison-button strong {
   font-size: 1.05rem;
+}
+
+.story-cinematic-continue-button {
+  font-size: 0.92rem;
+  font-weight: 1000;
+}
+
+.story-open-mouth-button {
+  border-color: #a8fff0;
+  color: #f0fffb;
+  background: linear-gradient(180deg, #1ca5a0, #0b696f);
+  box-shadow: 0 0 0 8px rgba(108, 246, 224, 0.18), 0 15px 28px rgba(0, 27, 39, 0.45);
+}
+
+.story-close-mouth-button:disabled {
+  cursor: wait;
+  opacity: 0.38;
+  animation: none;
+}
+
+.story-cinematic-continue-button:disabled {
+  cursor: wait;
+  opacity: 0;
+  animation: none;
 }
 
 .story-poison-token {
@@ -6806,11 +6861,87 @@ body {
   animation: story-poison-arrive 460ms cubic-bezier(0.1, 0.82, 0.2, 1) both;
 }
 
+.story-poison-token.is-diving-in {
+  left: 50%;
+  top: 48%;
+  z-index: 9;
+  opacity: 0;
+  animation: story-poison-dive-in 1250ms 180ms cubic-bezier(0.12, 0.82, 0.22, 1) both;
+}
+
 .story-poison-token.is-in-mouth {
   left: 50%;
   top: 48%;
   transform: translate(-50%, -50%);
   animation: story-poison-pulse 1.05s ease-in-out infinite;
+}
+
+.story-poison-token.is-in-mouth.is-training-poison {
+  left: 70%;
+  top: 58%;
+}
+
+.story-poison-token.is-spit-out {
+  left: 70%;
+  top: 58%;
+  z-index: 10;
+  animation: story-poison-spit-out 900ms cubic-bezier(0.16, 0.84, 0.24, 1) both;
+}
+
+.story-poison-bite-open {
+  animation: story-poison-open-vanish 360ms 1120ms ease-in both;
+}
+
+.story-poison-bite-closed {
+  z-index: 7;
+  opacity: 0;
+  animation: story-poison-closed-reveal 460ms 1080ms ease-out both;
+}
+
+.story-ocean-scene.is-poison-bite-cinematic .story-poison-bite-closed > img {
+  animation: story-poison-whale-wince 620ms 1500ms ease-in-out 2;
+}
+
+.story-poison-bite-caption {
+  position: absolute;
+  z-index: 12;
+  left: 50%;
+  top: 15%;
+  display: grid;
+  gap: 2px;
+  max-width: calc(100% - 24px);
+  border: 1px solid rgba(235, 255, 173, 0.7);
+  border-radius: 18px;
+  padding: 9px 18px;
+  color: #f8ffdf;
+  background: rgba(67, 32, 79, 0.9);
+  box-shadow: 0 12px 26px rgba(16, 4, 30, 0.35);
+  text-align: center;
+  opacity: 0;
+  transform: translateX(-50%);
+  animation: story-poison-caption-pop 520ms 1580ms cubic-bezier(0.16, 1.2, 0.28, 1) both;
+}
+
+.story-poison-bite-caption strong {
+  color: #e9ff92;
+  font-size: 1.25rem;
+}
+
+.story-poison-bite-caption span {
+  font-size: 0.72rem;
+  font-weight: 1000;
+  white-space: normal;
+}
+
+.story-ocean-scene.is-poison-bite-cinematic::after {
+  content: "";
+  position: absolute;
+  z-index: 8;
+  inset: 0;
+  pointer-events: none;
+  background: rgba(112, 42, 121, 0.24);
+  opacity: 0;
+  animation: story-poison-bite-wash 900ms 1120ms ease-out both;
 }
 
 .story-poison-warning,
@@ -7061,7 +7192,9 @@ body {
   50% { transform: translateY(-5px) scale(1.045); }
 }
 
+.story-open-mouth-button,
 .story-close-mouth-button,
+.story-cinematic-continue-button,
 .story-remove-poison-button {
   animation-name: story-action-pulse-centered;
 }
@@ -7086,6 +7219,12 @@ body {
   0% { opacity: 0; transform: translate(180%, -50%) scale(0.8); }
   75% { opacity: 1; transform: translate(-58%, -50%) scale(1.06); }
   100% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+}
+
+@keyframes story-parent-fish-arrive {
+  0% { opacity: 0; transform: translate(230%, -70%) rotate(12deg) scale(0.72); }
+  72% { opacity: 1; transform: translate(-62%, -50%) rotate(-3deg) scale(1.06); }
+  100% { opacity: 1; transform: translate(-50%, -50%) rotate(0) scale(1); }
 }
 
 @keyframes story-fish-swallowed {
@@ -7124,6 +7263,47 @@ body {
 @keyframes story-poison-arrive {
   0% { opacity: 0; transform: translateX(260%) rotate(18deg) scale(0.75); }
   100% { opacity: 1; transform: translateX(0) rotate(0) scale(1); }
+}
+
+@keyframes story-poison-dive-in {
+  0% { opacity: 0; transform: translate(260%, -180%) rotate(20deg) scale(0.72); }
+  68% { opacity: 1; transform: translate(-35%, -55%) rotate(-5deg) scale(1.08); }
+  100% { opacity: 0; transform: translate(-50%, -50%) rotate(0) scale(0.08); }
+}
+
+@keyframes story-poison-open-vanish {
+  0% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+@keyframes story-poison-closed-reveal {
+  0% { opacity: 0; transform: scale(1.08); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+@keyframes story-poison-whale-wince {
+  0%, 100% { transform: translate(-50%, -50%) rotate(0) scale(1); }
+  24% { transform: translate(-51.5%, -50.5%) rotate(-1.4deg) scale(1.015); }
+  55% { transform: translate(-48.5%, -49.5%) rotate(1.4deg) scale(0.99); }
+  78% { transform: translate(-50.5%, -50%) rotate(-0.5deg) scale(1.006); }
+}
+
+@keyframes story-poison-caption-pop {
+  0% { opacity: 0; transform: translateX(-50%) scale(0.6); }
+  70% { opacity: 1; transform: translateX(-50%) scale(1.08); }
+  100% { opacity: 1; transform: translateX(-50%) scale(1); }
+}
+
+@keyframes story-poison-bite-wash {
+  0% { opacity: 0; }
+  45% { opacity: 1; }
+  100% { opacity: 0.48; }
+}
+
+@keyframes story-poison-spit-out {
+  0% { opacity: 0; transform: translate(-50%, -50%) scale(0.12); }
+  35% { opacity: 1; }
+  100% { opacity: 0; transform: translate(190%, -170%) rotate(-18deg) scale(1.05); }
 }
 
 @keyframes story-poison-pulse {
@@ -7295,11 +7475,25 @@ body {
     height: 104px;
   }
 
+  .story-open-mouth-button,
   .story-close-mouth-button,
+  .story-cinematic-continue-button,
   .story-remove-poison-button {
     min-width: 190px;
     min-height: 60px;
     bottom: 16px;
+  }
+
+  .story-ocean-scene.is-close-moment .story-fish-token.is-parent-arriving.arrival-3,
+  .story-ocean-scene.is-poison-practice .story-fish-token.is-lower-left {
+    left: 24%;
+    top: 54%;
+  }
+
+  .story-poison-token.is-in-mouth.is-training-poison,
+  .story-poison-token.is-spit-out {
+    left: 77%;
+    top: 54%;
   }
 
   .story-poison-warning,
@@ -7388,5 +7582,24 @@ body {
     animation-duration: 0.001ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.001ms !important;
+  }
+
+  .story-ocean-scene.is-close-moment .story-fish-token.is-parent-arriving {
+    opacity: 1;
+    animation-delay: 0ms !important;
+  }
+
+  .story-poison-bite-open,
+  .story-poison-token.is-diving-in,
+  .story-poison-token.is-spit-out {
+    display: none;
+  }
+
+  .story-poison-bite-closed,
+  .story-poison-bite-caption,
+  .story-ocean-scene.is-poison-bite-cinematic::after,
+  .story-ocean-scene.is-poison-bite-cinematic .story-poison-bite-closed > img {
+    opacity: 1;
+    animation-delay: 0ms !important;
   }
 }
