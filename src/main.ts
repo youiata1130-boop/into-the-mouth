@@ -326,10 +326,10 @@ const tutorialSteps: readonly TutorialStep[] = [
     chapter: "親の冒険",
     title: "魚が飛び込んできた！",
     dialogue: "そろそろ口を閉じよう！",
-    helper: "魚2・3・4が飛び込みました。「口を閉じる」をタップしてください。",
+    helper: "魚2・3・4が順に入り、大きい魚が先にいた魚を食べます。魚4だけ残ったら「口を閉じる」をタップしてください。",
     visual: "close-moment",
     action: "close-mouth",
-    actionDelayMs: 1900
+    actionDelayMs: 2100
   },
   {
     chapter: "親の冒険",
@@ -2917,14 +2917,22 @@ function renderTutorialVisual(visual: TutorialVisual, actionDelayed = false): st
     return renderStoryWhaleScene(
       "open",
       "is-close-moment",
-      `${renderStoryBait("is-center")}${renderStoryFishToken(2, "is-upper-left is-parent-arriving arrival-1")}${renderStoryFishToken(3, "is-upper-right is-parent-arriving arrival-2")}${renderStoryFishToken(4, "is-lower-left is-parent-arriving arrival-3")}`,
+      `
+        ${renderStoryBait("is-center is-parent-prey")}
+        ${renderStoryFishToken(2, "is-upper-left is-parent-arriving is-parent-prey arrival-1", "餌1を食べる")}
+        ${renderStoryFishToken(3, "is-upper-right is-parent-arriving is-parent-prey arrival-2", "魚2と餌1を食べる")}
+        ${renderStoryFishToken(4, "is-lower-left is-parent-arriving arrival-3", "魚3＋魚2＋餌1")}
+        <span class="story-parent-chomp chomp-1" aria-hidden="true">パクッ！</span>
+        <span class="story-parent-chomp chomp-2" aria-hidden="true">パクッ！</span>
+        <span class="story-parent-chomp chomp-3" aria-hidden="true">パクッ！</span>
+      `,
       `
         <button class="story-close-mouth-button story-tutorial-action-target" type="button" data-action="tutorial-close-mouth"${actionDelayed ? ' disabled data-tutorial-delayed-action="true"' : ""}>
           <span>そろそろ！</span>
           <strong>口を閉じる</strong>
         </button>
       `,
-      "口を開くと、餌を求めて魚2、魚3、魚4の順に飛び込みました。"
+      "魚2が餌1を食べ、魚3が魚2を、魚4が魚3を獲物ごと食べたため、最後は魚4だけが残りました。"
     );
   }
 
@@ -2934,14 +2942,14 @@ function renderTutorialVisual(visual: TutorialVisual, actionDelayed = false): st
     return renderStoryWhaleScene(
       "open",
       "is-poison-practice",
-      `${renderStoryBait("is-center")}${renderStoryFishToken(2, "is-upper-left")}${renderStoryFishToken(3, "is-upper-right")}${renderStoryFishToken(4, "is-lower-left")}${renderStoryPoisonToken("is-in-mouth is-training-poison")}`,
+      `${renderStoryFishToken(4, "is-lower-left", "魚3＋魚2＋餌1")}${renderStoryPoisonToken("is-in-mouth is-training-poison")}`,
       `
         <button class="story-remove-poison-button story-tutorial-action-target" type="button" data-action="tutorial-remove-poison">
           <span aria-hidden="true">!</span>
           <strong>毒魚を取り除く</strong>
         </button>
       `,
-      "口を閉じる直前まで戻り、口の中の毒魚を取り除く練習です。"
+      "口を閉じる直前まで戻り、魚3、魚2、餌1を獲物として持つ魚4の横から毒魚を取り除く練習です。"
     );
   }
 
@@ -2949,9 +2957,9 @@ function renderTutorialVisual(visual: TutorialVisual, actionDelayed = false): st
     return renderStoryWhaleScene(
       "open",
       "is-poison-cleared",
-      `${renderStoryBait("is-center")}${renderStoryFishToken(2, "is-upper-left")}${renderStoryFishToken(3, "is-upper-right")}${renderStoryFishToken(4, "is-lower-left")}`,
+      renderStoryFishToken(4, "is-lower-left", "魚3＋魚2＋餌1"),
       `${renderStoryPoisonToken("is-spit-out")}<div class="story-poison-cleared"><span aria-hidden="true">✓</span><strong>毒魚を吐き出しました</strong></div>`,
-      "毒魚を口の外へ吐き出し、口の中には魚2、魚3、魚4と餌だけが残りました。"
+      "毒魚を口の外へ吐き出し、口の中には魚3、魚2、餌1を獲物として持つ魚4だけが残りました。"
     );
   }
 
@@ -2976,10 +2984,7 @@ function renderStoryPoisonBiteFailure(actionDelayed: boolean): string {
       <div class="story-whale is-open story-poison-bite-open">
         <img src="${whaleArtPaths.open}" alt="" aria-hidden="true">
         <div class="story-mouth-layer">
-          ${renderStoryBait("is-center")}
-          ${renderStoryFishToken(2, "is-upper-left")}
-          ${renderStoryFishToken(3, "is-upper-right")}
-          ${renderStoryFishToken(4, "is-lower-left")}
+          ${renderStoryFishToken(4, "is-lower-left", "魚3＋魚2＋餌1")}
         </div>
       </div>
       <div class="story-whale is-poisoned story-poison-bite-closed">

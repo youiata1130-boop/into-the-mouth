@@ -6424,17 +6424,67 @@ body {
 }
 
 .story-ocean-scene.is-close-moment .story-fish-token.is-parent-arriving.arrival-1 {
-  animation-delay: 120ms;
+  --prey-start-x: 30%;
+  --prey-start-y: 34%;
+  --prey-target-x: 69%;
+  --prey-target-y: 30%;
+  animation:
+    story-parent-fish-arrive 720ms cubic-bezier(0.18, 0.82, 0.26, 1) 120ms both,
+    story-parent-prey-eaten 360ms ease-in 1080ms forwards;
 }
 
 .story-ocean-scene.is-close-moment .story-fish-token.is-parent-arriving.arrival-2 {
-  animation-delay: 620ms;
+  --prey-start-x: 69%;
+  --prey-start-y: 30%;
+  --prey-target-x: 30%;
+  --prey-target-y: 58%;
+  animation:
+    story-parent-fish-arrive 720ms cubic-bezier(0.18, 0.82, 0.26, 1) 620ms both,
+    story-parent-prey-eaten 360ms ease-in 1640ms forwards;
 }
 
 .story-ocean-scene.is-close-moment .story-fish-token.is-parent-arriving.arrival-3 {
   left: 30%;
   top: 58%;
   animation-delay: 1120ms;
+}
+
+.story-ocean-scene.is-close-moment .story-bait-token.is-parent-prey {
+  --prey-start-x: 50%;
+  --prey-start-y: 48%;
+  --prey-target-x: 30%;
+  --prey-target-y: 34%;
+  animation: story-parent-prey-eaten 360ms ease-in 580ms forwards;
+}
+
+.story-parent-chomp {
+  position: absolute;
+  z-index: 10;
+  color: #fff7b0;
+  font-size: clamp(0.78rem, 2vw, 1.05rem);
+  font-weight: 1000;
+  text-shadow: 0 3px 8px rgba(0, 24, 35, 0.72);
+  opacity: 0;
+  transform: translate(-50%, -50%) scale(0.4) rotate(-8deg);
+  animation: story-parent-chomp-pop 420ms cubic-bezier(0.16, 1.25, 0.28, 1) both;
+}
+
+.story-parent-chomp.chomp-1 {
+  left: 30%;
+  top: 34%;
+  animation-delay: 580ms;
+}
+
+.story-parent-chomp.chomp-2 {
+  left: 69%;
+  top: 30%;
+  animation-delay: 1080ms;
+}
+
+.story-parent-chomp.chomp-3 {
+  left: 30%;
+  top: 58%;
+  animation-delay: 1640ms;
 }
 
 .story-ocean-scene.is-poison-practice .story-fish-token.is-lower-left,
@@ -7211,6 +7261,26 @@ body {
   100% { opacity: 1; transform: translate(-50%, -50%) rotate(0) scale(1); }
 }
 
+@keyframes story-parent-prey-eaten {
+  0% {
+    left: var(--prey-start-x);
+    top: var(--prey-start-y);
+    opacity: 1;
+    transform: translate(-50%, -50%) rotate(0) scale(1);
+  }
+  100% {
+    left: var(--prey-target-x);
+    top: var(--prey-target-y);
+    opacity: 0;
+    transform: translate(-50%, -50%) rotate(15deg) scale(0.08);
+  }
+}
+
+@keyframes story-parent-chomp-pop {
+  0%, 100% { opacity: 0; transform: translate(-50%, -50%) scale(0.4) rotate(-8deg); }
+  45% { opacity: 1; transform: translate(-50%, -72%) scale(1.12) rotate(3deg); }
+}
+
 @keyframes story-fish-swallowed {
   0% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
   100% { opacity: 0; transform: translate(25%, -50%) scale(0.12); }
@@ -7448,7 +7518,8 @@ body {
   }
 
   .story-ocean-scene.is-close-moment .story-fish-token.is-parent-arriving.arrival-3,
-  .story-ocean-scene.is-poison-practice .story-fish-token.is-lower-left {
+  .story-ocean-scene.is-poison-practice .story-fish-token.is-lower-left,
+  .story-ocean-scene.is-poison-cleared .story-fish-token.is-lower-left {
     left: 24%;
     top: 54%;
   }
@@ -7547,6 +7618,14 @@ body {
   .story-ocean-scene.is-close-moment .story-fish-token.is-parent-arriving {
     opacity: 1;
     animation-delay: 0ms !important;
+  }
+
+  .story-ocean-scene.is-close-moment .story-bait-token.is-parent-prey {
+    animation-delay: 0ms !important;
+  }
+
+  .story-parent-chomp {
+    display: none;
   }
 
   .story-poison-bite-open,
