@@ -415,6 +415,7 @@ let isTryReplayActive = false;
 let tryReplayTimerId: number | null = null;
 let mouthFishMotion: MouthFishMotion | null = null;
 let mouthFishMotionTimerId: number | null = null;
+let mouthFishMotionStartedAt: number | null = null;
 let actionWaitingPlayerIds = new Set<string>();
 let actionWaitTimerIds = new Map<string, number>();
 let isGameOver = false;
@@ -2142,9 +2143,11 @@ function startMouthFishMotion(motion: MouthFishMotion, playerId: string): void {
   }
 
   mouthFishMotion = motion;
+  mouthFishMotionStartedAt = window.performance.now();
   mouthFishMotionTimerId = window.setTimeout(() => {
     mouthFishMotion = null;
     mouthFishMotionTimerId = null;
+    mouthFishMotionStartedAt = null;
     render();
   }, duration);
   startOwnActionWait(playerId, duration + ownActionWaitExtensionMs);
@@ -2157,6 +2160,13 @@ function clearMouthFishMotion(): void {
   }
 
   mouthFishMotion = null;
+  mouthFishMotionStartedAt = null;
+}
+
+function getMouthFishMotionElapsedMs(): number {
+  if (!mouthFishMotion || mouthFishMotionStartedAt === null) return 0;
+  // Full-board renders rebuild the actors, so resume their CSS motion instead of replaying it.
+  return Math.max(0, Math.round(window.performance.now() - mouthFishMotionStartedAt));
 }
 
 function isPlayerWaitingAfterOwnAction(playerId: string): boolean {
@@ -2301,6 +2311,8 @@ function broadcastOnlineState(): void {
 }
 
 function applyOnlineState(state: OnlineGameState): void {
+  const previousMouthFishMotionId = mouthFishMotion?.enteringId ?? null;
+  const previousMouthFishMotionStartedAt = mouthFishMotionStartedAt;
   playerCount = state.playerCount;
   if (isCpuDifficulty(state.cpuDifficulty)) cpuDifficulty = state.cpuDifficulty;
   parentIndex = state.parentIndex;
@@ -2315,6 +2327,12 @@ function applyOnlineState(state: OnlineGameState): void {
   isTryReplayActive = Boolean(state.isTryReplayActive && !prefersReducedMotion());
   clearMouthFishMotion();
   mouthFishMotion = state.mouthFishMotion ?? null;
+  if (mouthFishMotion) {
+    mouthFishMotionStartedAt = previousMouthFishMotionId === mouthFishMotion.enteringId
+      && previousMouthFishMotionStartedAt !== null
+      ? previousMouthFishMotionStartedAt
+      : window.performance.now();
+  }
   applyOwnActionWaitingPlayers(state.actionWaitingPlayerIds ?? state.cardPlayWaitingPlayerIds ?? []);
   isGameOver = state.isGameOver;
   logEntries = state.logEntries;
@@ -4076,6 +4094,7 @@ function renderMouth(): string {
 }
 
 function renderMouthFishScene(): string {
+  const motionElapsedMs = getMouthFishMotionElapsedMs();
   const liveIds = new Set(getLiveMouthNumericCards().map((card) => card.boxId));
   const motionIds = new Set(
     mouthFishMotion
@@ -4101,10 +4120,10 @@ function renderMouthFishScene(): string {
         <span class="water-bubble bubble-one" aria-hidden="true"></span>
         <span class="water-bubble bubble-two" aria-hidden="true"></span>
         <span class="water-bubble bubble-three" aria-hidden="true"></span>
-        ${actors.map(renderMouthFishActor).join("")}
+        ${actors.map((card) => renderMouthFishActor(card, motionElapsedMs)).join("")}
         ${
           predatorPosition && mouthFishMotion?.preyIds.length
-            ? `<span class="mouth-chomp-burst" style="--burst-x:${predatorPosition.x}%; --burst-y:${predatorPosition.y}%" aria-hidden="true">パクッ!</span>`
+            ? `<span class="mouth-chomp-burst" style="--burst-x:${predatorPosition.x}%; --burst-y:${predatorPosition.y}%; --motion-elapsed:${motionElapsedMs}ms" aria-hidden="true">パクッ!</span>`
             : ""
         }
       </div>
@@ -4117,7 +4136,7 @@ function renderMouthFishScene(): string {
   `;
 }
 
-function renderMouthFishActor(card: BoxCard): string {
+function renderMouthFishActor(card: BoxCard, motionElapsedMs: number): string {
   if (card.type === "escape") return "";
 
   const position = getMouthFishPosition(card);
@@ -4139,7 +4158,8 @@ function renderMouthFishActor(card: BoxCard): string {
     `--target-x:${targetPosition.x}%`,
     `--target-y:${targetPosition.y}%`,
     `--fish-size:${getMouthFishSize(card)}%`,
-    `--motion-delay:${delay}ms`
+    `--motion-delay:${delay}ms`,
+    `--motion-elapsed:${motionElapsedMs}ms`
   ].join("; ");
   const statusClass = card.type === "fish"
     ? [
