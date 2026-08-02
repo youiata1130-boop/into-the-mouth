@@ -201,17 +201,17 @@ const cpuTuning = {
     delays: { open: [550, 1000], poison: [380, 750], close: [4400, 7600], secure: [650, 1250], child: [650, 1500] }
   },
   advanced: {
-    escapeMultiplier: 1.22,
-    mistakeChance: 0.01,
-    unproductiveFishChance: 0.003,
-    poisonTakeoverChance: 0.95,
-    ownPoisonFishAvoidChance: 0.99,
-    opponentPoisonFishAvoidChance: 0.97,
-    poisonAccuracy: 1.14,
-    randomPoisonChance: 0.01,
-    poisonRemovalChance: 0.98,
+    escapeMultiplier: 1.19,
+    mistakeChance: 0.02,
+    unproductiveFishChance: 0.006,
+    poisonTakeoverChance: 0.92,
+    ownPoisonFishAvoidChance: 0.98,
+    opponentPoisonFishAvoidChance: 0.94,
+    poisonAccuracy: 1.1,
+    randomPoisonChance: 0.015,
+    poisonRemovalChance: 0.96,
     closeScore: 6,
-    delays: { open: [450, 800], poison: [260, 500], close: [3800, 6500], secure: [450, 850], child: [480, 1000] }
+    delays: { open: [500, 900], poison: [320, 620], close: [4100, 7000], secure: [550, 1050], child: [560, 1220] }
   },
   expert: {
     escapeMultiplier: 1.25,
