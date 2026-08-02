@@ -448,8 +448,10 @@ let tutorialActionUnlockAt: number | null = null;
 const simpleActions: Record<string, () => void> = {
   "start-game-loading": loadGameImages,
   "open-tutorial": openTutorial,
+  "tutorial-return-title": returnFromTutorialToTitle,
   "tutorial-previous": showPreviousTutorialStep,
   "tutorial-next": showNextTutorialStep,
+  "tutorial-skip-next": skipTutorialStep,
   "tutorial-play-fish-2": playTutorialFish2,
   "tutorial-play-fish-4": playTutorialFish4,
   "tutorial-escape": escapeTutorialFish,
@@ -947,6 +949,11 @@ function confirmPlayerCount(): void {
 
 function returnToTitle(): void {
   if (hasStarted && !confirmDiscardProgress()) return;
+  clearActiveGameForTitle();
+  render();
+}
+
+function clearActiveGameForTitle(): void {
   clearNpcTimers(true);
   clearBiteAftermath();
   clearTryReplay();
@@ -956,7 +963,6 @@ function returnToTitle(): void {
   hasStarted = false;
   onlineLobbyOpen = false;
   modeSetupOpen = false;
-  render();
 }
 
 function openOnlineLobby(): void {
@@ -2674,6 +2680,16 @@ function closeTutorial(): void {
   tutorialButton?.focus({ preventScroll: true });
 }
 
+function returnFromTutorialToTitle(): void {
+  if (hasStarted && !confirmDiscardProgress()) return;
+  clearTutorialAutoAdvance();
+  resetTutorialActionUnlock();
+  tutorialReturnToRules = false;
+  tutorialStep = null;
+  clearActiveGameForTitle();
+  renderGameLaunchScreen();
+}
+
 function showPreviousTutorialStep(): void {
   if (tutorialStep === null) return;
   setTutorialStep(Math.max(0, tutorialStep - 1));
@@ -2684,6 +2700,17 @@ function showNextTutorialStep(): void {
   const step = tutorialSteps[tutorialStep];
 
   if (step.action) return;
+
+  if (tutorialStep >= tutorialSteps.length - 1) {
+    closeTutorial();
+    return;
+  }
+
+  setTutorialStep(tutorialStep + 1);
+}
+
+function skipTutorialStep(): void {
+  if (tutorialStep === null) return;
 
   if (tutorialStep >= tutorialSteps.length - 1) {
     closeTutorial();
@@ -2822,8 +2849,11 @@ function renderTutorialScreen(): string {
   const isLast = stepIndex === tutorialSteps.length - 1;
   const waitsForAction = step.action !== undefined;
   const advancesAutomatically = step.autoAdvanceMs !== undefined;
+  const autoAdvanceIsActive = advancesAutomatically
+    && !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   const waitsForDelayedAction = step.actionDelayMs !== undefined;
   const isResultStep = step.visual === "escape-result";
+  const waitsForManualContinue = !waitsForAction && !autoAdvanceIsActive;
   const delayedCommentAttributes = waitsForDelayedAction
     ? ' hidden data-tutorial-delayed-comment="true"'
     : "";
@@ -2834,7 +2864,7 @@ function renderTutorialScreen(): string {
         class="story-tutorial-shell scene-${step.visual}"
         role="dialog"
         aria-modal="true"
-        aria-label="遊び方チュートリアル"
+        aria-labelledby="tutorial-scene-title"
         aria-describedby="tutorial-dialogue tutorial-helper"
         tabindex="-1"
       >
@@ -2842,12 +2872,15 @@ function renderTutorialScreen(): string {
           <div class="story-tutorial-brand">
             <span class="story-compass" aria-hidden="true">✦</span>
             <div>
-              <p>THE WHALE'S COVE</p>
-              <strong>${step.chapter}</strong>
+              <p>SCENE ${stepIndex + 1} / ${tutorialSteps.length} · ${step.chapter}</p>
+              <h1 id="tutorial-scene-title">${step.title}</h1>
             </div>
           </div>
-          <p class="story-progress-label">SCENE ${stepIndex + 1} / ${tutorialSteps.length}</p>
-          <button class="story-tutorial-close" type="button" data-action="close-tutorial" aria-label="チュートリアルを閉じる">×</button>
+          <nav class="story-tutorial-header-actions" aria-label="チュートリアルの移動">
+            <button type="button" data-action="tutorial-return-title">タイトルへ</button>
+            <button type="button" data-action="tutorial-previous" ${isFirst ? "disabled" : ""}>戻る</button>
+            <button class="is-next" type="button" data-action="tutorial-skip-next" aria-label="${isLast ? "チュートリアルを完了" : "この場面を飛ばして次へ"}">${isLast ? "完了" : "次へ"}</button>
+          </nav>
         </header>
 
         <div class="story-tutorial-progress" aria-hidden="true">
@@ -2861,17 +2894,19 @@ function renderTutorialScreen(): string {
           <aside class="story-tutorial-popup" id="tutorial-dialogue" aria-live="polite"${delayedCommentAttributes}>
             <p>${renderTutorialDialogue(step.dialogue)}</p>
           </aside>
+          ${waitsForManualContinue
+            ? `<button class="story-manual-next-button story-tutorial-action-target" type="button" data-action="tutorial-next">
+                <span>次へ進む</span>
+                <strong>${isLast ? "チュートリアルを終える" : step.nextLabel ?? "次の場面へ"}</strong>
+              </button>`
+            : ""}
         </div>
 
         <footer class="story-tutorial-actions">
           <p class="story-tutorial-note" id="tutorial-helper"${delayedCommentAttributes}>${escapeHtml(step.helper)}</p>
-          <button class="secondary-button" type="button" data-action="tutorial-previous" ${isFirst ? "disabled" : ""}>前へ</button>
           <span class="story-action-hint">
-            ${waitsForDelayedAction ? "アニメーションのあとに操作できます" : waitsForAction ? "光っているところをタップ" : advancesAutomatically ? "物語が進んでいます…" : "← → キーでも移動できます"}
+            ${waitsForDelayedAction ? "アニメーションのあとに操作できます" : waitsForAction ? "光っているところをタップ" : autoAdvanceIsActive ? "自動で次の場面へ進みます…" : "中央のボタンで次へ進みます"}
           </span>
-          ${waitsForAction
-            ? '<span class="story-action-spacer" aria-hidden="true"></span>'
-            : `<button class="primary-button" type="button" data-action="tutorial-next">${isLast ? "完了" : step.nextLabel ?? "次へ"}</button>`}
         </footer>
       </section>
     </main>
