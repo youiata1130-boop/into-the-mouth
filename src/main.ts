@@ -486,16 +486,14 @@ function renderGameLaunchScreen(): void {
   appRoot.innerHTML = `
     <main class="start-screen launch-screen">
       ${renderOceanBackdrop()}
-      <section class="start-card launch-card" aria-labelledby="launch-title">
-        <div class="ocean-whale launch-mark" aria-hidden="true"><span></span></div>
-        <p class="start-eyebrow">WELCOME TO THE BLUE</p>
+      <div class="launch-whale-stage" aria-hidden="true">
+        <img class="launch-whale-art" src="${whaleArtPaths.open}" alt="">
+      </div>
+      <section class="launch-interface" aria-labelledby="launch-title">
         <h1 id="launch-title">口に入る</h1>
-        <p class="launch-catch">くじらの口へ、飛び込もう。</p>
-        <p class="start-lead">魚を食べるか、毒を仕掛けるか。<br>大きなくじらの口を舞台に、最高得点を目指そう。</p>
         <button class="primary-button launch-start-button" type="button" data-action="start-game-loading">
           ゲームスタート
         </button>
-        <p class="launch-note">ボタンを押すと、ゲーム画像を読み込みます</p>
       </section>
     </main>
   `;

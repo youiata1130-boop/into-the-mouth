@@ -8251,3 +8251,157 @@ body {
     animation-delay: 0ms !important;
   }
 }
+
+/* Opening tableau: only the game title and start button sit over the whale. */
+.launch-screen {
+  min-height: 100vh;
+  min-height: 100svh;
+  padding: 0;
+  background:
+    radial-gradient(circle at 50% 14%, rgba(151, 246, 235, 0.34), transparent 31%),
+    linear-gradient(180deg, #0a8daa 0%, #075a7c 51%, #042f4b 100%);
+}
+
+.launch-screen .ocean-rays {
+  opacity: 0.55;
+}
+
+.launch-screen .ocean-seabed {
+  opacity: 0.62;
+}
+
+.launch-whale-stage {
+  position: absolute;
+  z-index: 2;
+  left: 50%;
+  top: 51%;
+  width: min(96vw, 92svh, 1080px);
+  aspect-ratio: 1;
+  transform: translate(-50%, -48%);
+  filter: drop-shadow(0 34px 48px rgba(0, 19, 37, 0.46));
+  animation: launch-whale-breathe 4.8s ease-in-out infinite;
+}
+
+.launch-whale-art {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: contain;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+.launch-interface {
+  position: relative;
+  z-index: 4;
+  width: 100%;
+  min-height: 100vh;
+  min-height: 100svh;
+  pointer-events: none;
+}
+
+.launch-interface h1 {
+  position: absolute;
+  left: 50%;
+  top: clamp(24px, 6.5svh, 70px);
+  width: max-content;
+  max-width: calc(100% - 32px);
+  margin: 0;
+  color: #fff;
+  font-size: clamp(3.35rem, 9vw, 7.5rem);
+  font-weight: 1000;
+  line-height: 0.95;
+  letter-spacing: 0.04em;
+  text-align: center;
+  text-shadow:
+    0 4px 0 #07516e,
+    0 9px 0 rgba(2, 44, 65, 0.72),
+    0 18px 38px rgba(0, 18, 36, 0.5);
+  transform: translateX(-50%);
+}
+
+.launch-interface .launch-start-button {
+  position: absolute;
+  left: 50%;
+  top: 59%;
+  min-width: min(330px, calc(100% - 48px));
+  min-height: 66px;
+  border: 3px solid rgba(255, 247, 193, 0.9);
+  border-radius: 999px;
+  padding: 14px 38px;
+  background: linear-gradient(180deg, #ffe98f 0%, #f8bf43 100%);
+  color: #07384d;
+  font-size: clamp(1rem, 2.4vw, 1.25rem);
+  font-weight: 1000;
+  letter-spacing: 0.1em;
+  pointer-events: auto;
+  box-shadow:
+    0 7px 0 #b87718,
+    0 18px 38px rgba(0, 12, 24, 0.48),
+    0 0 30px rgba(255, 225, 111, 0.2);
+  transform: translateX(-50%);
+}
+
+.launch-interface .launch-start-button:hover,
+.launch-interface .launch-start-button:focus-visible {
+  filter: brightness(1.08);
+  transform: translate(-50%, -2px) scale(1.02);
+  box-shadow:
+    0 9px 0 #b87718,
+    0 22px 44px rgba(0, 12, 24, 0.5),
+    0 0 0 6px rgba(160, 252, 239, 0.2);
+}
+
+.launch-interface .launch-start-button:active {
+  transform: translate(-50%, 5px);
+  box-shadow:
+    0 2px 0 #b87718,
+    0 10px 22px rgba(0, 12, 24, 0.44);
+}
+
+@keyframes launch-whale-breathe {
+  0%, 100% { transform: translate(-50%, -48%) scale(1); }
+  50% { transform: translate(-50%, -48%) scale(1.012); }
+}
+
+@media (max-width: 620px) {
+  .launch-whale-stage {
+    top: 53%;
+    width: min(142vw, 82svh);
+    transform: translate(-50%, -45%);
+  }
+
+  .launch-interface h1 {
+    top: clamp(28px, 8svh, 70px);
+    font-size: clamp(3.2rem, 17vw, 5.2rem);
+  }
+
+  .launch-interface .launch-start-button {
+    top: 58%;
+    min-height: 60px;
+    padding-inline: 28px;
+  }
+}
+
+@media (max-height: 600px) and (orientation: landscape) {
+  .launch-whale-stage {
+    top: 54%;
+    width: min(74vw, 102svh);
+  }
+
+  .launch-interface h1 {
+    top: 18px;
+    font-size: clamp(2.8rem, 10svh, 4.8rem);
+  }
+
+  .launch-interface .launch-start-button {
+    top: 60%;
+    min-height: 54px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .launch-whale-stage {
+    animation: none;
+  }
+}
