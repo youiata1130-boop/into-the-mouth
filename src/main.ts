@@ -2799,6 +2799,11 @@ function scheduleTutorialActionUnlock(): void {
     actionTarget.removeAttribute("data-tutorial-delayed-action");
     const actionHint = appRoot.querySelector<HTMLElement>(".story-action-hint");
     if (actionHint) actionHint.textContent = "光っているところをタップ";
+    appRoot.querySelectorAll<HTMLElement>("[data-tutorial-delayed-comment]").forEach((comment) => {
+      comment.hidden = false;
+      comment.removeAttribute("data-tutorial-delayed-comment");
+      comment.classList.add("is-timed-comment-visible");
+    });
     if (shellHadFocus) actionTarget.focus({ preventScroll: true });
   };
   const remaining = Math.max(0, tutorialActionUnlockAt - Date.now());
@@ -2832,6 +2837,9 @@ function renderTutorialScreen(): string {
   const advancesAutomatically = step.autoAdvanceMs !== undefined;
   const waitsForDelayedAction = step.actionDelayMs !== undefined;
   const isResultStep = step.visual === "escape-result";
+  const delayedCommentAttributes = waitsForDelayedAction
+    ? ' hidden data-tutorial-delayed-comment="true"'
+    : "";
 
   return `
     <main class="story-tutorial-screen">
@@ -2863,13 +2871,13 @@ function renderTutorialScreen(): string {
           <section class="story-tutorial-world" aria-label="${step.title}の物語場面">
             ${renderTutorialVisual(step.visual, waitsForDelayedAction)}
           </section>
-          <aside class="story-tutorial-popup" id="tutorial-dialogue" aria-live="polite">
+          <aside class="story-tutorial-popup" id="tutorial-dialogue" aria-live="polite"${delayedCommentAttributes}>
             <p>${renderTutorialDialogue(step.dialogue)}</p>
           </aside>
         </div>
 
         <footer class="story-tutorial-actions">
-          <p class="story-tutorial-note" id="tutorial-helper">${escapeHtml(step.helper)}</p>
+          <p class="story-tutorial-note" id="tutorial-helper"${delayedCommentAttributes}>${escapeHtml(step.helper)}</p>
           <button class="secondary-button" type="button" data-action="tutorial-previous" ${isFirst ? "disabled" : ""}>前へ</button>
           <span class="story-action-hint">
             ${waitsForDelayedAction ? "アニメーションのあとに操作できます" : waitsForAction ? "光っているところをタップ" : advancesAutomatically ? "物語が進んでいます…" : "← → キーでも移動できます"}
