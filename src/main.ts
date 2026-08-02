@@ -485,10 +485,12 @@ renderGameLaunchScreen();
 function renderGameLaunchScreen(): void {
   appRoot.innerHTML = `
     <main class="start-screen launch-screen">
+      ${renderOceanBackdrop()}
       <section class="start-card launch-card" aria-labelledby="launch-title">
-        <div class="launch-mark" aria-hidden="true">●</div>
-        <p class="start-eyebrow">REAL-TIME CARD GAME</p>
+        <div class="ocean-whale launch-mark" aria-hidden="true"><span></span></div>
+        <p class="start-eyebrow">WELCOME TO THE BLUE</p>
         <h1 id="launch-title">口に入る</h1>
+        <p class="launch-catch">くじらの口へ、飛び込もう。</p>
         <p class="start-lead">魚を食べるか、毒を仕掛けるか。<br>大きなくじらの口を舞台に、最高得点を目指そう。</p>
         <button class="primary-button launch-start-button" type="button" data-action="start-game-loading">
           ゲームスタート
@@ -496,6 +498,16 @@ function renderGameLaunchScreen(): void {
         <p class="launch-note">ボタンを押すと、ゲーム画像を読み込みます</p>
       </section>
     </main>
+  `;
+}
+
+function renderOceanBackdrop(): string {
+  return `
+    <div class="ocean-rays" aria-hidden="true"></div>
+    <div class="ocean-bubbles" aria-hidden="true">
+      <span></span><span></span><span></span><span></span><span></span><span></span>
+    </div>
+    <div class="ocean-seabed" aria-hidden="true"></div>
   `;
 }
 
@@ -529,11 +541,12 @@ function renderLoadingScreen(loadedCount: number, totalCount: number): void {
   const progress = totalCount === 0 ? 100 : Math.round((loadedCount / totalCount) * 100);
   appRoot.innerHTML = `
     <main class="loading-screen" aria-labelledby="loading-title">
+      ${renderOceanBackdrop()}
       <section class="loading-card">
-        <div class="loading-whale" aria-hidden="true">●</div>
-        <p class="start-eyebrow">INTO THE MOUTH</p>
+        <div class="ocean-whale loading-whale" aria-hidden="true"><span></span></div>
+        <p class="start-eyebrow">DIVING INTO THE GAME</p>
         <h1 id="loading-title">ゲームを準備中</h1>
-        <p class="loading-message" role="status" aria-live="polite">画像を読み込んでいます… ${progress}%</p>
+        <p class="loading-message" role="status" aria-live="polite">海の仲間を呼んでいます… ${progress}%</p>
         <div class="loading-track" role="progressbar" aria-label="画像の読み込み状況" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${progress}">
           <span style="width: ${progress}%"></span>
         </div>
@@ -2616,10 +2629,13 @@ function renderCpuDifficultyOptions(title = "CPUの強さ"): string {
 
 function renderStartScreen(): string {
   return `
-    <main class="start-screen">
-      <section class="start-card" aria-labelledby="game-title">
-        <p class="start-eyebrow">REAL-TIME CARD GAME</p>
+    <main class="start-screen mode-screen">
+      ${renderOceanBackdrop()}
+      <section class="start-card mode-select-card" aria-labelledby="game-title">
+        <div class="ocean-whale mode-whale" aria-hidden="true"><span></span></div>
+        <p class="start-eyebrow">CHOOSE YOUR CURRENT</p>
         <h1 id="game-title">口に入る</h1>
+        <p class="mode-heading">どの海へ飛び込みますか？</p>
         <p class="start-lead">魚を食べるか、毒を仕掛けるか。相手の動きを読んで最高得点を目指そう。</p>
         <div class="mode-grid" aria-label="対戦モードを選択">
           <button class="mode-card mode-card-cpu" type="button" data-action="start-cpu">
