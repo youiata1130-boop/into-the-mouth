@@ -18,6 +18,7 @@ import {
   sumCapturedIds as sumBoardCapturedIds
 } from "./game/rules";
 import { getAppRoot, getFocusedControlIdentity, restoreFocusedControl } from "./ui/dom";
+import { InteractionRenderGate } from "./ui/interaction-render-gate";
 import type {
   BaitBoxCard,
   BoxCard,
@@ -437,8 +438,14 @@ let gameEffectTimerId: number | null = null;
 let tryEndReason: TryEndReason | null = null;
 let tryStartScores: Record<string, number> = {};
 let stackDragState: StackDragState | null = null;
-let suppressNextCardClick = false;
-let suppressClickTimerId: number | null = null;
+const interactionRenderGate = new InteractionRenderGate();
+let deferredRenderFlushTimerId: number | null = null;
+const activationClickFallbackDurationMs = 500;
+const suppressedDragClicks = new Map<number, { button: HTMLButtonElement; timerId: number }>();
+const protectedPointerButtons = new Map<number, HTMLButtonElement>();
+const pointerClickFallbackTimerIds = new Map<number, number>();
+const protectedKeyboardButtons = new Map<string, HTMLButtonElement>();
+const keyboardClickFallbackTimerIds = new Map<string, number>();
 let tutorialStep: number | null = null;
 let tutorialReturnToRules = false;
 let tutorialAutoTimerId: number | null = null;
@@ -560,10 +567,12 @@ function renderLoadingScreen(loadedCount: number, totalCount: number): void {
 appRoot.addEventListener("click", (event) => {
   const target = event.target;
 
-  if (!(target instanceof HTMLElement)) return;
+  if (!(target instanceof Element)) return;
 
-  if (suppressNextCardClick) {
-    suppressNextCardClick = false;
+  const actionButton = target.closest<HTMLButtonElement>("button[data-action]");
+  completeProtectedActivationClick(event, actionButton);
+
+  if (shouldSuppressCardClickAfterDrag(event, actionButton)) {
     event.preventDefault();
     return;
   }
@@ -591,7 +600,7 @@ appRoot.addEventListener("click", (event) => {
     return;
   }
 
-  const button = target.closest<HTMLButtonElement>("button[data-action]");
+  const button = actionButton;
 
   if (!button) return;
 
@@ -600,11 +609,13 @@ appRoot.addEventListener("click", (event) => {
 
   if (onlineRole === "guest" && hasStarted && isRemoteGameAction(action)) {
     const slotIndex = button.dataset.slotIndex;
+    const cardId = button.dataset.cardId;
     sendOnlineMessage({
       type: "action",
       action,
       playerId: button.dataset.playerId,
-      slotIndex: slotIndex === undefined ? undefined : Number(slotIndex)
+      slotIndex: slotIndex === undefined ? undefined : Number(slotIndex),
+      cardId: cardId === undefined ? undefined : Number(cardId)
     });
     const waitingPlayerId = action === "play-card" || action === "escape-card"
       ? button.dataset.playerId
@@ -634,7 +645,7 @@ appRoot.addEventListener("click", (event) => {
   if (!cardTarget) return;
 
   if (action === "play-card") {
-    playCard(cardTarget.playerId, cardTarget.slotIndex);
+    playCard(cardTarget.playerId, cardTarget.slotIndex, cardTarget.cardId);
   }
 });
 
@@ -642,6 +653,12 @@ appRoot.addEventListener("pointerdown", (event) => {
   const target = event.target;
   if (!(target instanceof HTMLElement)) return;
   if (event.pointerType === "mouse" && event.button !== 0) return;
+  clearSuppressedCardClick(event.pointerId);
+
+  const actionButton = target.closest<HTMLButtonElement>("button[data-action]");
+  if (actionButton && shouldProtectActionControl(actionButton)) {
+    beginProtectedPointer(event.pointerId, actionButton);
+  }
 
   const button = target.closest<HTMLButtonElement>("button[data-stack-value]");
   const cardTarget = button ? getStackCardIdentity(button) : null;
@@ -683,30 +700,54 @@ appRoot.addEventListener("pointerup", (event) => {
   const targetButton = drag.started ? getStackDropTarget(event.clientX, event.clientY, drag) : null;
 
   if (!drag.started || !targetButton) {
+    const shouldSkipClick = drag.started;
+    if (shouldSkipClick) {
+      event.preventDefault();
+      suppressCardClickAfterDrag(event.pointerId, drag.sourceButton);
+    }
     cancelStackDrag();
+    if (shouldSkipClick) settleProtectedPointerWithoutClick(event.pointerId);
     return;
   }
 
   event.preventDefault();
   const targetIdentity = getStackCardIdentity(targetButton);
-  suppressCardClickAfterDrag();
+  suppressCardClickAfterDrag(event.pointerId, drag.sourceButton);
   cancelStackDrag();
 
-  if (!targetIdentity) return;
-  requestStackCards(
-    drag.playerId,
-    drag.sourceSlotIndex,
-    targetIdentity.slotIndex,
-    drag.sourceCardId,
-    targetIdentity.cardId
-  );
+  if (targetIdentity) {
+    requestStackCards(
+      drag.playerId,
+      drag.sourceSlotIndex,
+      targetIdentity.slotIndex,
+      drag.sourceCardId,
+      targetIdentity.cardId
+    );
+  }
+  settleProtectedPointerWithoutClick(event.pointerId);
 });
 
 appRoot.addEventListener("pointercancel", (event) => {
   if (stackDragState?.pointerId === event.pointerId) cancelStackDrag();
 });
 
+window.addEventListener("pointerup", (event) => {
+  if (interactionRenderGate.hasPointer(event.pointerId)) schedulePointerClickFallback(event.pointerId);
+});
+
+window.addEventListener("pointercancel", (event) => {
+  if (endProtectedPointer(event.pointerId)) scheduleDeferredRenderFlush();
+});
+
 appRoot.addEventListener("keydown", (event) => {
+  const activationCode = getButtonActivationCode(event);
+  const actionButton = event.target instanceof HTMLElement
+    ? event.target.closest<HTMLButtonElement>("button[data-action]")
+    : null;
+  if (activationCode && actionButton && shouldProtectActionControl(actionButton)) {
+    beginProtectedKeyboard(activationCode, actionButton);
+  }
+
   if (tutorialStep !== null) {
     if (event.key === "ArrowLeft") {
       event.preventDefault();
@@ -754,6 +795,18 @@ appRoot.addEventListener("keydown", (event) => {
   );
 });
 
+window.addEventListener("keyup", (event) => {
+  const activationCode = getButtonActivationCode(event);
+  if (activationCode && interactionRenderGate.hasKeyboard(activationCode)) {
+    scheduleKeyboardClickFallback(activationCode);
+  }
+});
+
+window.addEventListener("blur", releaseProtectedInteractions);
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden") releaseProtectedInteractions();
+});
+
 appRoot.addEventListener("input", (event) => {
   const target = event.target;
   if (!(target instanceof HTMLInputElement)) return;
@@ -787,11 +840,14 @@ appRoot.addEventListener("change", (event) => {
   }
 });
 
-function getCardActionTarget(button: HTMLButtonElement): { playerId: string; slotIndex: number } | null {
+function getCardActionTarget(button: HTMLButtonElement): { playerId: string; slotIndex: number; cardId: number } | null {
   const playerId = button.dataset.playerId;
   const slotIndex = Number(button.dataset.slotIndex);
+  const cardId = Number(button.dataset.cardId);
 
-  return playerId && Number.isInteger(slotIndex) ? { playerId, slotIndex } : null;
+  return playerId && Number.isInteger(slotIndex) && Number.isInteger(cardId)
+    ? { playerId, slotIndex, cardId }
+    : null;
 }
 
 function getStackCardIdentity(button: HTMLButtonElement): StackCardIdentity | null {
@@ -853,13 +909,145 @@ function cancelStackDrag(): void {
   stackDragState = null;
 }
 
-function suppressCardClickAfterDrag(): void {
-  suppressNextCardClick = true;
-  if (suppressClickTimerId !== null) window.clearTimeout(suppressClickTimerId);
-  suppressClickTimerId = window.setTimeout(() => {
-    suppressNextCardClick = false;
-    suppressClickTimerId = null;
-  }, 80);
+function suppressCardClickAfterDrag(pointerId: number, button: HTMLButtonElement): void {
+  clearSuppressedCardClick(pointerId);
+  suppressedDragClicks.set(pointerId, {
+    button,
+    timerId: window.setTimeout(() => suppressedDragClicks.delete(pointerId), activationClickFallbackDurationMs)
+  });
+}
+
+function clearSuppressedCardClick(pointerId: number): void {
+  const suppressedClick = suppressedDragClicks.get(pointerId);
+  if (suppressedClick) window.clearTimeout(suppressedClick.timerId);
+  suppressedDragClicks.delete(pointerId);
+}
+
+function shouldSuppressCardClickAfterDrag(event: PointerEvent, button: HTMLButtonElement | null): boolean {
+  if (event.detail <= 0) return false;
+  const pointerId = suppressedDragClicks.has(event.pointerId)
+    ? event.pointerId
+    : [...suppressedDragClicks.entries()].find(([, suppressedClick]) => suppressedClick.button === button)?.[0];
+  if (pointerId === undefined) return false;
+  clearSuppressedCardClick(pointerId);
+  return true;
+}
+
+function shouldProtectActionControl(button: HTMLButtonElement): boolean {
+  return !button.disabled;
+}
+
+function getButtonActivationCode(event: KeyboardEvent): "Enter" | "Space" | null {
+  if (event.key === "Enter") return "Enter";
+  if (event.key === " " || event.code === "Space") return "Space";
+  return null;
+}
+
+function beginProtectedPointer(pointerId: number, button: HTMLButtonElement): void {
+  clearPointerClickFallbackTimer(pointerId);
+  protectedPointerButtons.set(pointerId, button);
+  interactionRenderGate.beginPointer(pointerId);
+}
+
+function schedulePointerClickFallback(pointerId: number): void {
+  clearPointerClickFallbackTimer(pointerId);
+  pointerClickFallbackTimerIds.set(pointerId, window.setTimeout(() => {
+    pointerClickFallbackTimerIds.delete(pointerId);
+    protectedPointerButtons.delete(pointerId);
+    if (interactionRenderGate.endPointer(pointerId)) scheduleDeferredRenderFlush();
+  }, activationClickFallbackDurationMs));
+}
+
+function clearPointerClickFallbackTimer(pointerId: number): void {
+  const timerId = pointerClickFallbackTimerIds.get(pointerId);
+  if (timerId !== undefined) window.clearTimeout(timerId);
+  pointerClickFallbackTimerIds.delete(pointerId);
+}
+
+function endProtectedPointer(pointerId: number): boolean {
+  clearPointerClickFallbackTimer(pointerId);
+  protectedPointerButtons.delete(pointerId);
+  return interactionRenderGate.endPointer(pointerId);
+}
+
+function settleProtectedPointerWithoutClick(pointerId: number): void {
+  if (endProtectedPointer(pointerId)) scheduleDeferredRenderFlush();
+}
+
+function beginProtectedKeyboard(code: string, button: HTMLButtonElement): void {
+  clearKeyboardClickFallbackTimer(code);
+  protectedKeyboardButtons.set(code, button);
+  interactionRenderGate.beginKeyboard(code);
+}
+
+function scheduleKeyboardClickFallback(code: string): void {
+  clearKeyboardClickFallbackTimer(code);
+  keyboardClickFallbackTimerIds.set(code, window.setTimeout(() => {
+    keyboardClickFallbackTimerIds.delete(code);
+    protectedKeyboardButtons.delete(code);
+    if (interactionRenderGate.endKeyboard(code)) scheduleDeferredRenderFlush();
+  }, activationClickFallbackDurationMs));
+}
+
+function clearKeyboardClickFallbackTimer(code: string): void {
+  const timerId = keyboardClickFallbackTimerIds.get(code);
+  if (timerId !== undefined) window.clearTimeout(timerId);
+  keyboardClickFallbackTimerIds.delete(code);
+}
+
+function endProtectedKeyboard(code: string): boolean {
+  clearKeyboardClickFallbackTimer(code);
+  protectedKeyboardButtons.delete(code);
+  return interactionRenderGate.endKeyboard(code);
+}
+
+function completeProtectedActivationClick(event: PointerEvent, button: HTMLButtonElement | null): void {
+  let interactionEnded = false;
+
+  if (event.detail > 0) {
+    const pointerId = pointerClickFallbackTimerIds.has(event.pointerId)
+      ? event.pointerId
+      : [...pointerClickFallbackTimerIds.keys()].find((candidateId) => protectedPointerButtons.get(candidateId) === button)
+        ?? (pointerClickFallbackTimerIds.size === 1 ? pointerClickFallbackTimerIds.keys().next().value : undefined);
+    if (pointerId !== undefined) interactionEnded = endProtectedPointer(pointerId) || interactionEnded;
+  } else {
+    const keyboardCode = [...keyboardClickFallbackTimerIds.keys()]
+      .find((candidateCode) => protectedKeyboardButtons.get(candidateCode) === button)
+      ?? (["Enter", "Space"].find((candidateCode) =>
+        interactionRenderGate.hasKeyboard(candidateCode) && protectedKeyboardButtons.get(candidateCode) === button
+      ));
+    if (keyboardCode) interactionEnded = endProtectedKeyboard(keyboardCode) || interactionEnded;
+  }
+
+  if (interactionEnded) scheduleDeferredRenderFlush();
+}
+
+function scheduleDeferredRenderFlush(): void {
+  if (deferredRenderFlushTimerId !== null) return;
+
+  deferredRenderFlushTimerId = window.setTimeout(() => {
+    deferredRenderFlushTimerId = null;
+    if (interactionRenderGate.consumePendingRender()) render(false);
+  }, 0);
+}
+
+function clearDeferredRenderFlushTimer(): void {
+  if (deferredRenderFlushTimerId === null) return;
+  window.clearTimeout(deferredRenderFlushTimerId);
+  deferredRenderFlushTimerId = null;
+}
+
+function releaseProtectedInteractions(): void {
+  suppressedDragClicks.forEach(({ timerId }) => window.clearTimeout(timerId));
+  pointerClickFallbackTimerIds.forEach((timerId) => window.clearTimeout(timerId));
+  keyboardClickFallbackTimerIds.forEach((timerId) => window.clearTimeout(timerId));
+  suppressedDragClicks.clear();
+  pointerClickFallbackTimerIds.clear();
+  keyboardClickFallbackTimerIds.clear();
+  protectedPointerButtons.clear();
+  protectedKeyboardButtons.clear();
+  interactionRenderGate.clearInteractions();
+  scheduleDeferredRenderFlush();
 }
 
 function requestStackCards(
@@ -1120,6 +1308,7 @@ function handleHostMessage(connection: DataConnection, raw: unknown): void {
     action?: string;
     playerId?: string;
     slotIndex?: number;
+    cardId?: number;
     targetSlotIndex?: number;
     sourceCardId?: number;
     targetCardId?: number;
@@ -1149,7 +1338,9 @@ function handleHostMessage(connection: DataConnection, raw: unknown): void {
     if (message.playerId !== assignedId) return;
     if (message.action === "play-card") {
       if (!Number.isInteger(message.slotIndex)) return;
-      playCard(assignedId, message.slotIndex!);
+      // Older deployed clients omit cardId; current clients include it to reject a refilled stale slot.
+      if (message.cardId !== undefined && !Number.isInteger(message.cardId)) return;
+      playCard(assignedId, message.slotIndex!, message.cardId);
     } else {
       escapeWithCard(assignedId);
     }
@@ -1479,13 +1670,13 @@ function removeActivePoison(): void {
   render();
 }
 
-function playCard(playerId: string, slotIndex: number): void {
+function playCard(playerId: string, slotIndex: number, expectedCardId?: number): void {
   if (isPlayerWaitingAfterOwnAction(playerId)) return;
 
   const player = getPlayer(playerId);
   const card = player.faceUp[slotIndex];
 
-  if (!card || player.role !== "child") return;
+  if (!card || player.role !== "child" || (expectedCardId !== undefined && card.id !== expectedCardId)) return;
 
   if (!isMouthOpen || isGameOver) {
     addLog("口が開いている間だけカードを出せます。");
@@ -2424,7 +2615,19 @@ function applyOnlineState(state: OnlineGameState): void {
   render();
 }
 
-function render(): void {
+function render(runGameSideEffects = true): void {
+  const shouldRunGameSideEffects = runGameSideEffects && hasStarted && tutorialStep === null && !modeSetupOpen && !onlineLobbyOpen;
+
+  if (interactionRenderGate.deferRenderIfInteracting()) {
+    if (shouldRunGameSideEffects) {
+      broadcastOnlineState();
+      scheduleNpcAutomation();
+    }
+    return;
+  }
+
+  interactionRenderGate.markRendered();
+  clearDeferredRenderFlushTimer();
   cancelStackDrag();
   const focusedControl = getFocusedControlIdentity();
 
@@ -2575,8 +2778,10 @@ function render(): void {
     restoreFocusedControl(appRoot, focusedControl);
   }
 
-  broadcastOnlineState();
-  scheduleNpcAutomation();
+  if (shouldRunGameSideEffects) {
+    broadcastOnlineState();
+    scheduleNpcAutomation();
+  }
 }
 
 function renderPlayerCountScreen(): string {
