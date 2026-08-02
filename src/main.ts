@@ -229,6 +229,11 @@ const cpuTuning = {
 } as const satisfies Record<CpuDifficulty, CpuTuning>;
 
 const appRoot = getAppRoot();
+const gameImagePaths = [...new Set([
+  ...Object.values(fishArtPaths),
+  poisonFishArtPath,
+  ...Object.values(whaleArtPaths)
+])];
 const biteAftermathDurationMs = 1500;
 const mouthFishMotionDurationMs = 900;
 const ownActionWaitExtensionMs = 300;
@@ -474,7 +479,51 @@ const simpleActions: Record<string, () => void> = {
   "reset-game": resetGameWithConfirmation
 };
 
-render();
+void loadGameImages();
+
+async function loadGameImages(): Promise<void> {
+  renderLoadingScreen(0, gameImagePaths.length);
+
+  let loadedCount = 0;
+  await Promise.all(gameImagePaths.map(async (path) => {
+    try {
+      await preloadImage(path);
+    } finally {
+      loadedCount += 1;
+      renderLoadingScreen(loadedCount, gameImagePaths.length);
+    }
+  }));
+
+  render();
+}
+
+function preloadImage(path: string): Promise<void> {
+  return new Promise((resolve) => {
+    const image = new Image();
+    const finish = (): void => resolve();
+    image.addEventListener("load", finish, { once: true });
+    image.addEventListener("error", finish, { once: true });
+    image.src = path;
+  });
+}
+
+function renderLoadingScreen(loadedCount: number, totalCount: number): void {
+  const progress = totalCount === 0 ? 100 : Math.round((loadedCount / totalCount) * 100);
+  appRoot.innerHTML = `
+    <main class="loading-screen" aria-labelledby="loading-title">
+      <section class="loading-card">
+        <div class="loading-whale" aria-hidden="true">●</div>
+        <p class="start-eyebrow">INTO THE MOUTH</p>
+        <h1 id="loading-title">ゲームを準備中</h1>
+        <p class="loading-message" role="status" aria-live="polite">画像を読み込んでいます… ${progress}%</p>
+        <div class="loading-track" role="progressbar" aria-label="画像の読み込み状況" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${progress}">
+          <span style="width: ${progress}%"></span>
+        </div>
+        <p class="loading-count">${loadedCount} / ${totalCount}</p>
+      </section>
+    </main>
+  `;
+}
 
 appRoot.addEventListener("click", (event) => {
   const target = event.target;
