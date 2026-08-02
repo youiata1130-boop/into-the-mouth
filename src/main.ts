@@ -109,7 +109,8 @@ type TutorialStep = {
   nextLabel?: string;
 };
 type NpcChildAction =
-  | { type: "play" | "escape"; slotIndex: number }
+  | { type: "play"; slotIndex: number }
+  | { type: "escape" }
   | { type: "stack"; sourceSlotIndex: number; targetSlotIndex: number };
 type StackCardIdentity = {
   playerId: string;
@@ -299,7 +300,7 @@ const tutorialSteps: readonly TutorialStep[] = [
     chapter: "子の冒険",
     title: "食べられる前に逃げよう",
     dialogue: "食べられる前に逃げよう！",
-    helper: "獲物を捕まえた魚は、手札1枚を裏向きに使って逃げられます。「裏で逃げる 4点」をタップしてください。",
+    helper: "獲物を捕まえた魚は、山札の隣にある専用の「逃げる」カードで逃げられます。1トライに1回だけ使えます。",
     visual: "escape-ready",
     action: "escape"
   },
@@ -307,7 +308,7 @@ const tutorialSteps: readonly TutorialStep[] = [
     chapter: "子の冒険",
     title: "ヒューん！ 逃げ切りました",
     dialogue: "逃げ切りました！",
-    helper: "相手の魚3＋親の餌1＝4点です。自分の魚と逃走用カードは数えません。",
+    helper: "相手の魚3＋親の餌1＝4点です。自分の魚と逃げる専用カードは数えません。",
     visual: "escape-success",
     nextLabel: "リザルトを見る"
   },
@@ -598,13 +599,14 @@ appRoot.addEventListener("click", (event) => {
   const simpleAction = simpleActions[action];
 
   if (onlineRole === "guest" && hasStarted && isRemoteGameAction(action)) {
+    const slotIndex = button.dataset.slotIndex;
     sendOnlineMessage({
       type: "action",
       action,
       playerId: button.dataset.playerId,
-      slotIndex: Number(button.dataset.slotIndex)
+      slotIndex: slotIndex === undefined ? undefined : Number(slotIndex)
     });
-    const waitingPlayerId = action === "play-card"
+    const waitingPlayerId = action === "play-card" || action === "escape-card"
       ? button.dataset.playerId
       : action === "open-mouth" || action === "remove-poison"
         ? localPlayerId
@@ -621,13 +623,17 @@ appRoot.addEventListener("click", (event) => {
     return;
   }
 
+  if (action === "escape-card") {
+    const playerId = button.dataset.playerId;
+    if (playerId) escapeWithCard(playerId);
+    return;
+  }
+
   const cardTarget = getCardActionTarget(button);
 
   if (!cardTarget) return;
 
-  if (action === "escape-card") {
-    escapeWithCard(cardTarget.playerId, cardTarget.slotIndex);
-  } else if (action === "play-card") {
+  if (action === "play-card") {
     playCard(cardTarget.playerId, cardTarget.slotIndex);
   }
 });
@@ -1140,8 +1146,13 @@ function handleHostMessage(connection: DataConnection, raw: unknown): void {
     return;
   }
   if (message.action === "play-card" || message.action === "escape-card") {
-    if (message.playerId !== assignedId || !Number.isInteger(message.slotIndex)) return;
-    message.action === "play-card" ? playCard(assignedId, message.slotIndex!) : escapeWithCard(assignedId, message.slotIndex!);
+    if (message.playerId !== assignedId) return;
+    if (message.action === "play-card") {
+      if (!Number.isInteger(message.slotIndex)) return;
+      playCard(assignedId, message.slotIndex!);
+    } else {
+      escapeWithCard(assignedId);
+    }
     return;
   }
 
@@ -1307,7 +1318,7 @@ function startParentRound(): void {
   }
 
   resetTryBox();
-  addLog(`${getParent().name} の親ラウンド開始。子の山札を11枚に補給し、3枚を公開しました。必ず3トライ行います。`);
+  addLog(`${getParent().name} の親ラウンド開始。子の山札を9枚に補給し、3枚を公開しました。逃げる専用カードは山札の隣に置き、各トライ1回だけ使えます。`);
 }
 
 function resetTryBox(): void {
@@ -1318,6 +1329,9 @@ function resetTryBox(): void {
   clearOwnActionWaits();
   nextSequence = 1;
   boxCards = [createBaitBoxCard()];
+  players.forEach((player) => {
+    player.escapeUsedThisTry = false;
+  });
   tryStartScores = Object.fromEntries(players.map((player) => [player.id, player.score]));
   activePoison = null;
   isMouthOpen = false;
@@ -1337,6 +1351,7 @@ function createPlayers(): Player[] {
     name: isCpu ? `CPU ${index + 1}` : gameMode === "online" ? (onlinePlayerNames.get(playerId) ?? `プレイヤー${index + 1}`) : `プレイヤー${index + 1}`,
     role: index === parentIndex ? "parent" : "child",
     score: 0,
+    escapeUsedThisTry: false,
     drawPile: [],
     faceUp: [],
     used: []
@@ -1633,7 +1648,7 @@ function playPoison(player: Player, slotIndex: number): void {
   render();
 }
 
-function escapeWithCard(playerId: string, slotIndex: number): void {
+function escapeWithCard(playerId: string): void {
   if (isPlayerWaitingAfterOwnAction(playerId)) return;
 
   const player = getPlayer(playerId);
@@ -1646,15 +1661,18 @@ function escapeWithCard(playerId: string, slotIndex: number): void {
     return;
   }
 
-  const card = useFaceUpCard(player, slotIndex);
+  if (player.escapeUsedThisTry) {
+    addLog(`${player.name} は、このトライですでに逃げるカードを使っています。`);
+    render();
+    return;
+  }
 
-  if (!card) return;
+  player.escapeUsedThisTry = true;
 
   const target = findEscapeTarget(player.id);
 
   const escapeCard: EscapeBoxCard = {
     boxId: nextBoxCardId++,
-    sourceCardId: card.id,
     type: "escape",
     ownerId: player.id,
     ownerName: player.name,
@@ -1665,7 +1683,7 @@ function escapeWithCard(playerId: string, slotIndex: number): void {
   boxCards.push(escapeCard);
 
   if (!target) {
-    addLog(`${player.name} は逃げる権利がない状態でカードを出しました。このカードは効果も得点価値も持たず、使用済みになります。`);
+    addLog(`${player.name} は得点候補がない状態で逃げるカードを使いました。効果はなく、このトライでは使用済みになります。`);
     render();
     return;
   }
@@ -1898,10 +1916,10 @@ function shouldStrategicParentSecure(availableScore: number): boolean {
   if (!usesStableNpcDeadlines() || availableScore <= 0) return false;
 
   return getChildren().some((player) => {
-    const canAct = player.faceUp.some(Boolean);
+    const canAct = player.faceUp.some(Boolean) || !player.escapeUsedThisTry;
     if (!canAct) return false;
 
-    const canEscapeWithPoints = getPlayerCandidates(player.id).some(
+    const canEscapeWithPoints = !player.escapeUsedThisTry && getPlayerCandidates(player.id).some(
       (candidate) => sumCapturedIds(candidate.capturedIds, player.id) > 0
     );
     const canPlayPoison = player.faceUp.some((card) => card?.type === "poison");
@@ -1912,7 +1930,9 @@ function shouldStrategicParentSecure(availableScore: number): boolean {
 
 function scheduleNpcChildAction(): void {
   const npcChildren = getNpcChildren().filter(
-    (player) => player.faceUp.some(Boolean) && !isPlayerWaitingAfterOwnAction(player.id)
+    (player) =>
+      (player.faceUp.some(Boolean) || (!player.escapeUsedThisTry && getPlayerCandidates(player.id).length > 0)) &&
+      !isPlayerWaitingAfterOwnAction(player.id)
   );
 
   if (npcChildren.length === 0) {
@@ -1940,7 +1960,7 @@ function scheduleNpcChildAction(): void {
       if (action.type === "stack") {
         stackCardsIntoSchool(player.id, action.sourceSlotIndex, action.targetSlotIndex);
       } else if (action.type === "escape") {
-        escapeWithCard(player.id, action.slotIndex);
+        escapeWithCard(player.id);
       } else {
         playCard(player.id, action.slotIndex);
       }
@@ -1958,14 +1978,14 @@ function chooseNpcChildAction(player: Player): NpcChildAction | null {
   const tuning = cpuTuning[cpuDifficulty];
   const candidate = getPlayerCandidates(player.id).at(-1);
   const candidateTotal = candidate ? sumCapturedIds(candidate.capturedIds, player.id) : 0;
-  const escapeSlot = getNpcEscapeSlot(player);
+  const canEscape = !player.escapeUsedThisTry;
 
-  if (candidate && escapeSlot !== null) {
+  if (candidate && canEscape) {
     const shouldSecureLargeSchool = candidate.value >= 6 && candidateTotal > 0;
     const escapeChance = shouldSecureLargeSchool ? 0.94 : candidateTotal >= 6 ? 0.82 : candidateTotal >= 3 ? 0.58 : 0.28;
 
     if (Math.random() < Math.min(0.98, escapeChance * tuning.escapeMultiplier)) {
-      return { type: "escape", slotIndex: escapeSlot };
+      return { type: "escape" };
     }
   }
 
@@ -2014,8 +2034,8 @@ function chooseNpcChildAction(player: Player): NpcChildAction | null {
     }
   }
 
-  if (candidate && escapeSlot !== null) {
-    return { type: "escape", slotIndex: escapeSlot };
+  if (candidate && canEscape) {
+    return { type: "escape" };
   }
 
   return null;
@@ -2024,12 +2044,12 @@ function chooseNpcChildAction(player: Player): NpcChildAction | null {
 function chooseExpertNpcChildAction(player: Player): NpcChildAction | null {
   const candidate = getPlayerCandidates(player.id).at(-1);
   const candidateTotal = candidate ? sumCapturedIds(candidate.capturedIds, player.id) : 0;
-  const escapeSlot = getExpertNpcEscapeSlot(player);
+  const canEscape = !player.escapeUsedThisTry;
   const poisonSlot = player.faceUp.findIndex((card) => card?.type === "poison");
 
   if (activePoison) {
-    if (candidate && escapeSlot !== null && candidateTotal > 0) {
-      return { type: "escape", slotIndex: escapeSlot };
+    if (candidate && canEscape && candidateTotal > 0) {
+      return { type: "escape" };
     }
 
     if (activePoison.ownerId !== player.id && poisonSlot >= 0) {
@@ -2055,7 +2075,7 @@ function chooseExpertNpcChildAction(player: Player): NpcChildAction | null {
 
   if (
     candidate &&
-    escapeSlot !== null &&
+    canEscape &&
     candidateTotal > 0 &&
     (
       parentIsLikelyToClose ||
@@ -2064,7 +2084,7 @@ function chooseExpertNpcChildAction(player: Player): NpcChildAction | null {
       (candidateIsAtRisk && bestFish.gain < candidateTotal + 3)
     )
   ) {
-    return { type: "escape", slotIndex: escapeSlot };
+    return { type: "escape" };
   }
 
   if (poisonSlot >= 0 && shouldPlayPoisonNow()) {
@@ -2075,8 +2095,8 @@ function chooseExpertNpcChildAction(player: Player): NpcChildAction | null {
     return { type: "play", slotIndex: bestFish.slotIndex };
   }
 
-  if (candidate && escapeSlot !== null && candidateTotal > 0) {
-    return { type: "escape", slotIndex: escapeSlot };
+  if (candidate && canEscape && candidateTotal > 0) {
+    return { type: "escape" };
   }
 
   const stackPair = getNpcStackPair(player);
@@ -2089,23 +2109,6 @@ function isExpertCandidateAtRisk(player: Player, candidate: FishBoxCard): boolea
       (card) => card?.type === "fish" && card.value >= candidate.value && estimateFishCaptureValue(card.value, opponent.id) > 0
     )
   );
-}
-
-function getExpertNpcEscapeSlot(player: Player): number | null {
-  const singleFish = player.faceUp
-    .map((card, slotIndex) => ({ card, slotIndex }))
-    .filter((item): item is { card: FishCard; slotIndex: number } => item.card?.type === "fish" && item.card.schoolSize === undefined)
-    .sort((left, right) => left.card.value - right.card.value)[0];
-  if (singleFish) return singleFish.slotIndex;
-
-  const schoolFish = player.faceUp
-    .map((card, slotIndex) => ({ card, slotIndex }))
-    .filter((item): item is { card: FishCard; slotIndex: number } => item.card?.type === "fish")
-    .sort((left, right) => left.card.value - right.card.value)[0];
-  if (schoolFish) return schoolFish.slotIndex;
-
-  const anySlot = player.faceUp.findIndex(Boolean);
-  return anySlot >= 0 ? anySlot : null;
 }
 
 function getNpcStackPair(player: Player): { sourceSlotIndex: number; targetSlotIndex: number } | null {
@@ -2167,15 +2170,6 @@ function getCpuPoisonRemovalChance(): number {
 
 function getCpuCloseScore(): number {
   return cpuTuning[cpuDifficulty].closeScore;
-}
-
-function getNpcEscapeSlot(player: Player): number | null {
-  const fishSlot = player.faceUp.findIndex((card) => card?.type === "fish");
-
-  if (fishSlot >= 0) return fishSlot;
-
-  const anySlot = player.faceUp.findIndex(Boolean);
-  return anySlot >= 0 ? anySlot : null;
 }
 
 function getNpcChildren(): Player[] {
@@ -2402,7 +2396,10 @@ function applyOnlineState(state: OnlineGameState): void {
   parentIndex = state.parentIndex;
   completedParentRounds = state.completedParentRounds;
   currentTry = state.currentTry;
-  players = state.players;
+  players = state.players.map((player) => ({
+    ...player,
+    escapeUsedThisTry: player.escapeUsedThisTry ?? false
+  }));
   boxCards = state.boxCards;
   activePoison = state.activePoison;
   isMouthOpen = state.isMouthOpen;
@@ -2994,7 +2991,7 @@ function renderTutorialVisual(visual: TutorialVisual, actionDelayed = false): st
       "is-escape-ready",
       `${renderStoryFishToken(3, "is-left is-swallowed", "食べられた")}${renderStoryFishToken(4, "is-center is-feasting", "魚3＋魚2＋餌1")}`,
       renderStoryEscapeControl(4),
-      "魚4が獲物を捕まえ、手札の魚2を裏向きで使って逃げられる状態です。"
+      "魚4が獲物を捕まえ、山札とは別の逃げる専用カードを使える状態です。"
     );
   }
 
@@ -3179,19 +3176,19 @@ function renderStoryHandCard(
 function renderStoryEscapeControl(points: number): string {
   return `
     <div class="story-hand-dock is-escape-dock">
-      <span class="story-hand-label">あなたの手札</span>
-      <span class="story-hand-card value-2 is-escape-source" aria-hidden="true">
-        <img src="${fishArtPaths[2]}" alt="">
-        <b>2</b>
-        <small>手札のカード</small>
+      <span class="story-hand-label">山札の隣に置く専用カード</span>
+      <span class="story-deck-stack" aria-hidden="true">
+        <i></i><i></i><strong>山札</strong>
       </span>
       <button
-        class="escape-chip story-tutorial-escape-chip story-tutorial-action-target"
+        class="story-tutorial-escape-card story-tutorial-action-target"
         type="button"
         data-action="tutorial-escape"
-        aria-label="手札の魚2を裏向きで使い、魚4で${points}点を確定して逃げる"
+        aria-label="専用の逃げるカードを使い、魚4で${points}点を確定して逃げる"
       >
-        裏で逃げる ${points}点
+        <span aria-hidden="true">逃</span>
+        <strong>逃げる</strong>
+        <small>${points}点を確定</small>
       </button>
     </div>
   `;
@@ -3199,9 +3196,9 @@ function renderStoryEscapeControl(points: number): string {
 
 function renderTutorialTryResult(): string {
   const resultPlayers: Player[] = [
-    { id: "player-1", name: "親CPU", role: "parent", score: 0, drawPile: [], faceUp: [], used: [] },
-    { id: "player-2", name: "あなた", role: "child", score: 4, drawPile: [], faceUp: [], used: [] },
-    { id: "player-3", name: "ライバルCPU", role: "child", score: 0, drawPile: [], faceUp: [], used: [] }
+    { id: "player-1", name: "親CPU", role: "parent", score: 0, escapeUsedThisTry: false, drawPile: [], faceUp: [], used: [] },
+    { id: "player-2", name: "あなた", role: "child", score: 4, escapeUsedThisTry: true, drawPile: [], faceUp: [], used: [] },
+    { id: "player-3", name: "ライバルCPU", role: "child", score: 0, escapeUsedThisTry: false, drawPile: [], faceUp: [], used: [] }
   ];
   const resultCards: BoxCard[] = [
     {
@@ -3260,7 +3257,6 @@ function renderTutorialTryResult(): string {
     },
     {
       boxId: 5,
-      sourceCardId: 104,
       type: "escape",
       ownerId: "player-2",
       ownerName: "あなた",
@@ -3302,7 +3298,7 @@ function renderTutorialRuleCards(): string {
           ${renderStoryFishToken(4)}
           <span class="story-escape-token" aria-hidden="true">逃</span>
         </div>
-        <div><span>逃げる</span><strong>成功したら得点確定</strong><p>食べた他人の数字だけを合計。自分のカードと逃げる魚自身は含めません。</p></div>
+        <div><span>逃げる</span><strong>専用カードを各トライ1回</strong><p>山札の隣に常設。成功時は食べた他人の数字だけを合計し、得点を確定します。</p></div>
       </article>
       <article class="story-rule-card is-poison">
         <div class="story-rule-visual">${renderStoryPoisonToken()}<span class="story-remove-token" aria-hidden="true">×</span></div>
@@ -3462,7 +3458,8 @@ function renderRulesSummary(): string {
         <p class="section-label">進行と捕食</p>
         <ul>
           <li>親1人につき必ず3トライ行い、その後に親を交代します。</li>
-          <li>山札と公開札はトライ間で引き継ぎ、親交代時に補給します。</li>
+          <li>各子の山札は魚2×3、魚3×3、魚4×1、魚6×1、毒魚×1の9枚です。魚6にはサメの絵を使います。</li>
+          <li>山札と公開札はトライ間で引き継ぎ、親交代時に補給します。逃げる専用カードは山札に混ぜず、隣に置きます。</li>
           <li>魚を出すと直前から逆順に比べ、大きい魚が小さい魚を食べます。先に大きい魚がいた場合は、後から出した小さい魚が食べられます。</li>
           <li>同じ強さでは後から出した魚が先の魚を食べます。食べられた魚が抱えていた魚も、まとめて捕食した魚へ引き継がれます。</li>
           <li>口の中は固定画面で、数字が小さい魚ほど小さく、大きい魚ほど大きく表示されます。</li>
@@ -3472,7 +3469,7 @@ function renderRulesSummary(): string {
           <li>2匹の群れには、さらに同じ種類を1枚追加でき、3匹の群れになります。強さは2の群れなら6、3の群れなら9です。完成した群れは1枚の魚として出し、分けることはできません。</li>
           <li>群れを作って空いた公開枠には、山札があれば即座に1枚補充します。</li>
           <li>得点時は、得点する人自身が出したカードを除き、食べた数字カードを得点します。</li>
-          <li>逃げ成功時は、逃げる魚自身と同じ子が以前に出した魚を除いて得点します。</li>
+          <li>逃げる専用カードは各トライ1回だけ使えます。成功時は、逃げる魚自身と同じ子が以前に出した魚を除いて得点します。</li>
           <li>最初の餌「1」は親自身のカードです。ほかに魚がいないまま親が閉じても0点です。</li>
           <li>親が閉じたら、自身の餌・毒魚・逃げる・毒魚で得点化済みの魚を除いた数字カードを得点します。</li>
         </ul>
@@ -3480,12 +3477,12 @@ function renderRulesSummary(): string {
       <div>
         <p class="section-label">効果なしと毒魚</p>
         <ul>
-          <li>逃げる権利がない子の裏向きカードは、効果も得点価値も持ちません。</li>
+          <li>得点候補がない状態で逃げる専用カードを使うと効果はありませんが、そのトライでは使用済みになります。次のトライで再び使えます。</li>
           <li>自分の毒魚に続けて出した魚も、効果も得点価値も持ちません。</li>
           <li>毒魚の後に毒魚が出ると、得点の権利は後の子へ移ります。</li>
           <li>毒魚があっても、権利を持つ子は逃げられます。</li>
           <li>親は口が開いていて毒魚が有効な間、時間制限なく除去できます。</li>
-          <li>山札と公開札を使い切った子は行動できません。</li>
+          <li>山札と公開札を使い切っても、未使用の逃げる専用カードは使えます。専用カードも使用済みなら、そのトライでは行動できません。</li>
         </ul>
       </div>
     </details>
@@ -4535,7 +4532,9 @@ function renderChildPanel(player: Player, index: number, variant: "opponent" | "
   const latestCandidate = candidates.at(-1);
   const hasNoCards = player.faceUp.every((card) => card === null) && player.drawPile.length === 0;
   const candidateText = hasNoCards
-    ? "山札切れ・この親ラウンドでは行動終了"
+    ? player.escapeUsedThisTry
+      ? "通常カードなし・このトライでは行動終了"
+      : "通常カードなし・逃げる専用カードは使用可能"
     : latestCandidate
     ? `逃げ対象: ${getFishCardLabel(latestCandidate)} / ${sumCapturedIds(latestCandidate.capturedIds, player.id)}点`
     : "有効な得点候補なし";
@@ -4549,8 +4548,11 @@ function renderChildPanel(player: Player, index: number, variant: "opponent" | "
         </div>
         <strong>${player.score}点</strong>
       </header>
-      <div class="hand-row">
-        ${player.faceUp.map((card, slotIndex) => renderHandSlot(player, card, slotIndex)).join("")}
+      <div class="child-card-area">
+        <div class="hand-row">
+          ${player.faceUp.map((card, slotIndex) => renderHandSlot(player, card, slotIndex)).join("")}
+        </div>
+        ${renderEscapeCard(player)}
       </div>
       ${
         isSelf
@@ -4615,10 +4617,6 @@ function renderHandSlot(player: Player, card: PlayerCard | null, slotIndex: numb
   const cardArtwork = card.type === "fish"
     ? renderCardFishArtwork(card.schoolBaseValue ?? card.value, card.schoolSize)
     : `<img class="card-fish-art is-poison-art" src="${poisonFishArtPath}" alt="" aria-hidden="true">`;
-  const escapeCandidate = getPlayerCandidates(player.id).at(-1);
-  const escapePoints = escapeCandidate ? sumCapturedIds(escapeCandidate.capturedIds, player.id) : 0;
-  const escapeLabel = escapeCandidate ? `裏で逃げる ${escapePoints}点` : "裏で逃げる（効果なし）";
-
   return `
     <div class="hand-slot">
       <button
@@ -4639,16 +4637,51 @@ function renderHandSlot(player: Player, card: PlayerCard | null, slotIndex: numb
         ${card.type === "poison" ? '<span class="card-symbol poison-symbol" aria-hidden="true">&#9760;</span>' : `<span class="card-value">${valueLabel}</span>`}
         ${isSchool ? `<span class="school-fish-count-badge" aria-hidden="true">${getSchoolVisualFishCount(card)}匹</span>` : ""}
       </button>
+    </div>
+  `;
+}
+
+function renderEscapeCard(player: Player): string {
+  const isWaitingAfterOwnAction = isPlayerWaitingAfterOwnAction(player.id);
+  const candidate = getPlayerCandidates(player.id).at(-1);
+  const points = candidate ? sumCapturedIds(candidate.capturedIds, player.id) : 0;
+  const canInteract =
+    player.id === localPlayerId &&
+    player.role === "child" &&
+    isMouthOpen &&
+    !isGameOver;
+  const canUse = canInteract && !isWaitingAfterOwnAction && !player.escapeUsedThisTry;
+  const status = player.escapeUsedThisTry
+    ? "このトライでは使用済み"
+    : candidate
+      ? `${points}点を確定`
+      : "得点候補なし";
+  const title = player.escapeUsedThisTry
+    ? "次のトライまで逃げるカードは使えません。"
+    : isWaitingAfterOwnAction
+      ? "自分がカードを出した後の待ち時間です。"
+      : !canInteract
+        ? "口が開いている自分の子の番に使えます。"
+        : candidate
+          ? `専用カードを使って${points}点を確定し、このトライを終えます。`
+          : "得点候補がないため効果はありませんが、このトライでは使用済みになります。";
+
+  return `
+    <div class="escape-reserve" aria-label="山札とは別に置く逃げる専用カード">
+      <span class="escape-reserve-label">山札と別</span>
       <button
-        class="escape-chip"
+        class="escape-supply-card${player.escapeUsedThisTry ? " is-used" : ""}${candidate ? " has-target" : ""}"
         type="button"
         data-action="escape-card"
         data-player-id="${player.id}"
-        data-slot-index="${slotIndex}"
+        aria-label="逃げる専用カード。${status}。1トライに1回"
         ${canUse ? "" : " disabled"}
-        title="${canUse ? (getPlayerCandidates(player.id).length > 0 ? "このカードを裏向きで使って逃げます。" : "逃げる権利がないため、出しても効果はなく使用済みになります。") : unavailableTitle}"
+        title="${title}"
       >
-        ${escapeLabel}
+        <span class="escape-supply-symbol" aria-hidden="true">逃</span>
+        <strong>逃げる</strong>
+        <small>${status}</small>
+        <i>1 TRY / 1回</i>
       </button>
     </div>
   `;

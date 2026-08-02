@@ -8,6 +8,7 @@ export const fishArtPaths: Record<FishValue, string> = {
   3: `${creatureAssetRoot}/fish-3.webp`,
   4: `${creatureAssetRoot}/creature-4-octopus.webp`,
   5: `${creatureAssetRoot}/fish-5-shark.webp`,
+  // 魚6は魚5のサメの絵を使う。
   6: `${creatureAssetRoot}/fish-5-shark.webp`,
   9: `${creatureAssetRoot}/fish-3.webp`
 };

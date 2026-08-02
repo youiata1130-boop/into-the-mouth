@@ -13,7 +13,7 @@ HERO = ASSET / "whale-mouth-rulebook.png"
 FISH2 = ROOT / "public" / "assets" / "creatures" / "fish-2-sardine.png"
 FISH3 = ROOT / "public" / "assets" / "creatures" / "fish-3.png"
 FISH4 = ROOT / "public" / "assets" / "creatures" / "creature-4-octopus.png"
-FISH5 = ROOT / "public" / "assets" / "creatures" / "fish-5-shark.png"
+FISH6 = ROOT / "public" / "assets" / "creatures" / "fish-5-shark.png"
 POISON = ROOT / "public" / "assets" / "creatures" / "fish-poison.png"
 
 NAVY = "12354A"
@@ -149,7 +149,7 @@ def icon_row(doc):
     t = doc.add_table(rows=1, cols=5)
     t.alignment = WD_TABLE_ALIGNMENT.CENTER
     t.autofit = False
-    labels = [(FISH2, "魚2 ×4"), (FISH3, "魚3 ×3"), (FISH4, "魚4 ×2"), (FISH5, "魚5 ×1"), (POISON, "毒魚 ×1")]
+    labels = [(FISH2, "魚2 ×3"), (FISH3, "魚3 ×3"), (FISH4, "魚4 ×1"), (FISH6, "魚6 ×1"), (POISON, "毒魚 ×1")]
     for i, (path, label) in enumerate(labels):
         c = t.cell(0, i); set_cell_width(c, 35.8); margins(c, 40, 60, 50, 60); shade(c, PALE if i < 4 else CREAM)
         p = clear_cell(c); p.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -222,21 +222,21 @@ def build():
     callout(doc,"勝ち方","全員が1回ずつ親を担当。最後に合計得点が最も高い人が勝ち。同点は全員勝利です。",PALE,TEAL)
     heading(doc,"1","ゲームの準備",before=4)
     bullet(doc,"親を1人決め、ほかの人は子になります。親ラウンドは必ず3トライです。")
-    bullet(doc,"各子は自分の11枚をよく混ぜて山札にし、上から3枚を表向きに並べます。")
+    bullet(doc,"各子は自分の9枚をよく混ぜて山札にし、上から3枚を表向きに並べます。魚6には魚5のサメの絵を使います。")
     icon_row(doc)
     bullet(doc,"公開カードを使ったら山札から即補充。山札・公開カード・使用済みカードは3トライを通して引き継ぎます。")
-    bullet(doc,"山札と公開カードがなくなった子は、その親ラウンドでは行動終了です。")
+    bullet(doc,"逃げる専用カードは山札に混ぜず隣へ置き、各トライ1回だけ使います。通常カードがなくても未使用なら使えます。")
 
     heading(doc,"2","1トライの流れ")
     step_strip(doc)
     para(doc,"",after=1)
     bullet(doc,"箱の最初に、親の餌「1」を入れます。これは親自身のカードなので親の得点には入りません。")
     bullet(doc,"親が口を開けたら、子は好きな公開カードを表向きで出せます。順番は固定ではありません。")
-    bullet(doc,"魚が入るたびに捕食を解決します。子は条件を満たせば、公開カード1枚を裏向きにして逃げられます。")
+    bullet(doc,"魚が入るたびに捕食を解決します。子は条件を満たせば、山札の隣の専用カードを使って逃げられます。")
     bullet(doc,"親が口を閉じる、または逃げが成功するとトライ終了。入った順に公開して得点します。")
     callout(doc,"箱の見方","カードは入った順に処理。現物では下のカードほど先に入ったカードです。口が開いている間は一番上だけ見えます。",CREAM,YELLOW)
     heading(doc,"3","親ラウンドとゲーム終了")
-    bullet(doc,"1人の親につき3トライ。3トライ後、次の人が親になり、子の山札を11枚に戻して混ぜ直します。")
+    bullet(doc,"1人の親につき3トライ。3トライ後、次の人が親になり、子の山札を9枚に戻して混ぜ直します。")
     bullet(doc,"全員が親を終えたらゲーム終了。得点を合計して勝者を決めます。")
 
     doc.add_page_break()
@@ -265,8 +265,8 @@ def build():
 
     heading(doc,"6","逃げる：食べた分を確定得点に")
     bullet(doc,"自分の魚がほかの数字カードを食べていれば、その子には「逃げる権利」があります。")
-    bullet(doc,"公開カード1枚を裏向きで箱へ。成功すると、その魚が食べた他人の数字カードの合計を得点し、トライ終了です。逃げる魚自身は得点にしません。")
-    bullet(doc,"候補が複数なら自分が最後に出した有効な魚が対象。権利なしで裏向きにしたカードは使用済みになり、効果も得点価値もありません。")
+    bullet(doc,"山札の隣に置いた専用カードを使います。成功すると、その魚が食べた他人の数字カードの合計を得点し、トライ終了です。逃げる魚自身は得点にしません。")
+    bullet(doc,"専用カードは1トライ1回。候補が複数なら最後に出した有効な魚が対象です。権利なしで使うと不発ですが、そのトライでは再使用できません。次のトライで戻ります。")
 
     heading(doc,"7","毒魚：得点の権利を奪う")
     bullet(doc,"有効な毒魚は、別の子が次に出した魚1枚を毒魚の持ち主の確定得点にします。毒魚を出した本人が続けて魚を出すと、その魚は無効です。")

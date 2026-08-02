@@ -1,10 +1,10 @@
 import type { FishValue } from "./model";
 
 export const FISH_COUNTS: ReadonlyArray<readonly [FishValue, number]> = [
-  [2, 4],
+  [2, 3],
   [3, 3],
-  [4, 2],
-  [5, 1]
+  [4, 1],
+  [6, 1]
 ];
 
 export const CHILD_LABELS = ["子A", "子B", "子C", "子D", "子E"] as const;

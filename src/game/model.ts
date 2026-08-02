@@ -24,6 +24,7 @@ export type Player = {
   name: string;
   role: Role;
   score: number;
+  escapeUsedThisTry: boolean;
   drawPile: PlayerCard[];
   faceUp: Array<PlayerCard | null>;
   used: PlayerCard[];
@@ -72,7 +73,6 @@ export type PoisonBoxCard = {
 
 export type EscapeBoxCard = {
   boxId: number;
-  sourceCardId: number;
   type: "escape";
   ownerId: string;
   ownerName: string;
