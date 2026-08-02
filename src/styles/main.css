@@ -102,6 +102,66 @@
   .loading-track span { transition: none; }
 }
 
+.launch-card {
+  position: relative;
+  overflow: hidden;
+}
+
+.launch-card::before,
+.launch-card::after {
+  content: "";
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.launch-card::before {
+  width: 210px;
+  height: 210px;
+  top: -120px;
+  right: -75px;
+  background: rgba(22, 127, 134, 0.1);
+}
+
+.launch-card::after {
+  width: 150px;
+  height: 150px;
+  bottom: -95px;
+  left: -45px;
+  background: rgba(242, 201, 76, 0.18);
+}
+
+.launch-mark {
+  width: 72px;
+  height: 72px;
+  display: grid;
+  place-items: center;
+  margin: 0 auto 22px;
+  border-radius: 44% 56% 52% 48%;
+  background: var(--teal);
+  color: #fff;
+  box-shadow: 0 14px 28px rgba(13, 83, 89, 0.22);
+}
+
+.launch-start-button {
+  position: relative;
+  min-width: min(300px, 100%);
+  min-height: 64px;
+  padding: 16px 34px;
+  border-radius: 999px;
+  font-size: 1.15rem;
+  letter-spacing: 0.08em;
+  box-shadow: 0 14px 28px rgba(13, 83, 89, 0.22);
+}
+
+.launch-note {
+  position: relative;
+  margin: 14px 0 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
 .start-screen {
   min-height: 100vh;
   min-height: 100svh;

@@ -446,6 +446,7 @@ let tutorialActionUnlockStep: number | null = null;
 let tutorialActionUnlockAt: number | null = null;
 
 const simpleActions: Record<string, () => void> = {
+  "start-game-loading": loadGameImages,
   "open-tutorial": openTutorial,
   "tutorial-previous": showPreviousTutorialStep,
   "tutorial-next": showNextTutorialStep,
@@ -479,7 +480,24 @@ const simpleActions: Record<string, () => void> = {
   "reset-game": resetGameWithConfirmation
 };
 
-void loadGameImages();
+renderGameLaunchScreen();
+
+function renderGameLaunchScreen(): void {
+  appRoot.innerHTML = `
+    <main class="start-screen launch-screen">
+      <section class="start-card launch-card" aria-labelledby="launch-title">
+        <div class="launch-mark" aria-hidden="true">●</div>
+        <p class="start-eyebrow">REAL-TIME CARD GAME</p>
+        <h1 id="launch-title">口に入る</h1>
+        <p class="start-lead">魚を食べるか、毒を仕掛けるか。<br>大きなくじらの口を舞台に、最高得点を目指そう。</p>
+        <button class="primary-button launch-start-button" type="button" data-action="start-game-loading">
+          ゲームスタート
+        </button>
+        <p class="launch-note">ボタンを押すと、ゲーム画像を読み込みます</p>
+      </section>
+    </main>
+  `;
+}
 
 async function loadGameImages(): Promise<void> {
   renderLoadingScreen(0, gameImagePaths.length);
