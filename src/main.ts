@@ -282,7 +282,7 @@ const tutorialSteps: readonly TutorialStep[] = [
   {
     chapter: "子の冒険",
     title: "ここは大きな口の中！",
-    dialogue: "うわ！ ここは大きな魚の口の中！",
+    dialogue: "うわ！！ここは大きな魚の口の中だったのですね！",
     helper: "獲物を捕まえたら、食べられる前に逃げましょう。次のトライで練習します。",
     visual: "mouth-closed",
     nextLabel: "逃げる練習へ"
