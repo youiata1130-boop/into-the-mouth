@@ -957,12 +957,13 @@
 }
 
 .mode-select-card .mode-grid {
+  margin-top: 30px;
   gap: 18px;
 }
 
 .mode-select-card .mode-card {
   position: relative;
-  min-height: 188px;
+  min-height: 142px;
   overflow: hidden;
   border: 1px solid rgba(210, 255, 255, 0.28);
   color: #f6feff;
@@ -1010,7 +1011,7 @@
 .mode-select-card .mode-card strong {
   position: relative;
   z-index: 1;
-  font-size: 1.2rem;
+  font-size: clamp(1.15rem, 2.4vw, 1.45rem);
 }
 
 .mode-select-card .mode-card small {
@@ -1020,9 +1021,17 @@
 }
 
 .mode-select-card .tutorial-entry {
+  justify-content: center;
   border-color: rgba(204, 252, 255, 0.28);
   background: rgba(4, 42, 64, 0.48);
   color: #f1feff;
+  text-align: center;
+}
+
+.mode-select-card .tutorial-entry strong {
+  color: #f1feff;
+  font-size: 1.1rem;
+  letter-spacing: 0.04em;
 }
 
 .mode-select-card .tutorial-entry small {

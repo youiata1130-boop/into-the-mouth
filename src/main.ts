@@ -2631,28 +2631,17 @@ function renderStartScreen(): string {
       ${renderOceanBackdrop()}
       <section class="start-card mode-select-card" aria-labelledby="game-title">
         <div class="ocean-whale mode-whale" aria-hidden="true"><span></span></div>
-        <p class="start-eyebrow">CHOOSE YOUR CURRENT</p>
         <h1 id="game-title">口に入る</h1>
-        <p class="mode-heading">どの海へ飛び込みますか？</p>
-        <p class="start-lead">魚を食べるか、毒を仕掛けるか。相手の動きを読んで最高得点を目指そう。</p>
         <div class="mode-grid" aria-label="対戦モードを選択">
           <button class="mode-card mode-card-cpu" type="button" data-action="start-cpu">
-            <span class="mode-icon" aria-hidden="true">CPU</span>
             <strong>CPUと対戦</strong>
-            <small>ひとりですぐに対戦を始める</small>
           </button>
           <button class="mode-card mode-card-online" type="button" data-action="open-online-lobby">
-            <span class="mode-icon" aria-hidden="true">NET</span>
             <strong>友達とオンライン対戦</strong>
-            <small>部屋を作り、参加コードで別の端末と遊ぶ</small>
           </button>
         </div>
         <button class="tutorial-entry" type="button" data-action="open-tutorial">
-          <span class="tutorial-entry-icon" aria-hidden="true">?</span>
-          <span>
-            <strong>遊び方を見る</strong>
-            <small>魚をタップしながら、子と親の役割を物語で体験します</small>
-          </span>
+          <strong>ルール説明</strong>
         </button>
       </section>
     </main>
