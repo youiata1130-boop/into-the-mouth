@@ -489,7 +489,7 @@ function renderGameLaunchScreen(): void {
     <main class="start-screen launch-screen">
       ${renderOceanBackdrop()}
       <div class="launch-whale-stage" aria-hidden="true">
-        <img class="launch-whale-art" src="${whaleArtPaths.open}" alt="">
+        <img class="launch-whale-art" src="${whaleArtPaths.launchOpen}" alt="">
       </div>
       <section class="launch-interface" aria-labelledby="launch-title">
         <h1 id="launch-title">口に入る</h1>

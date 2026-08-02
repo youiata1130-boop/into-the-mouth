@@ -17,6 +17,7 @@ export const poisonFishArtPath = `${creatureAssetRoot}/fish-poison.webp`;
 export const whaleArtPaths = {
   closed: `${whaleAssetRoot}/closed.webp`,
   open: `${whaleAssetRoot}/open.webp`,
+  launchOpen: `${whaleAssetRoot}/open-wide.webp`,
   fed: `${whaleAssetRoot}/fed.webp`,
   poisoned: `${whaleAssetRoot}/poisoned.webp`
 } as const;
