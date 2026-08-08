@@ -8774,3 +8774,726 @@ body {
     animation: none;
   }
 }
+
+/* The tutorial uses the live board layout, with a small guide frame around it. */
+.story-tutorial-screen {
+  --story-gold: #ffd35c;
+  padding: 10px;
+  color: var(--ink);
+  background:
+    radial-gradient(circle at 12% 10%, rgba(115, 211, 202, 0.22), transparent 28%),
+    linear-gradient(180deg, #edf8f6 0%, #d8eeeb 100%);
+}
+
+.story-tutorial-shell {
+  max-width: 1220px;
+  min-height: min(820px, calc(100svh - 20px));
+  border-color: rgba(13, 83, 89, 0.22);
+  border-radius: 18px;
+  color: var(--ink);
+  background: #f7fbfa;
+  box-shadow: 0 24px 60px rgba(18, 65, 70, 0.2);
+}
+
+.story-tutorial-header,
+.story-tutorial-progress {
+  background: #fff;
+}
+
+.story-tutorial-header {
+  min-height: 68px;
+  border-bottom: 1px solid rgba(13, 83, 89, 0.08);
+}
+
+.story-tutorial-brand p {
+  color: var(--muted);
+}
+
+.story-tutorial-brand h1 {
+  color: var(--ink);
+}
+
+.story-compass {
+  border-color: rgba(22, 127, 134, 0.38);
+  color: var(--teal-dark);
+  background: #edf9f7;
+  box-shadow: inset 0 0 0 4px rgba(22, 127, 134, 0.06);
+}
+
+.story-tutorial-header-actions button {
+  border-color: rgba(13, 83, 89, 0.2);
+  color: var(--teal-dark);
+  background: #fff;
+  box-shadow: none;
+}
+
+.story-tutorial-header-actions button:hover:not(:disabled) {
+  border-color: rgba(13, 83, 89, 0.42);
+  background: #edf8f6;
+}
+
+.story-tutorial-header-actions button.is-next {
+  border-color: #0f747b;
+  color: #fff;
+  background: linear-gradient(180deg, #23949b, #116f76);
+  box-shadow: 0 5px 12px rgba(17, 111, 118, 0.2);
+}
+
+.story-tutorial-progress span {
+  background: #d8e8e6;
+}
+
+.story-tutorial-progress span.is-complete {
+  background: #48a9a3;
+}
+
+.story-tutorial-progress span.is-current {
+  background: #f0b735;
+  box-shadow: 0 0 8px rgba(240, 183, 53, 0.52);
+}
+
+.story-tutorial-body,
+.story-tutorial-body.is-result-step {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 8px;
+  padding: 10px 14px;
+  overflow: visible;
+}
+
+.story-tutorial-world,
+.story-tutorial-body.is-result-step .story-tutorial-world {
+  grid-row: 2;
+  min-height: clamp(560px, 66svh, 670px);
+  border-color: rgba(13, 83, 89, 0.2);
+  border-radius: 12px;
+  color: var(--ink);
+  background: #eaf4f2;
+  box-shadow: inset 0 0 28px rgba(18, 85, 90, 0.08);
+}
+
+.story-tutorial-popup {
+  position: static;
+  grid-row: 1;
+  width: 100%;
+  border: 1px solid rgba(13, 83, 89, 0.22);
+  border-radius: 9px;
+  padding: 8px 13px;
+  color: var(--ink);
+  background: #fff;
+  box-shadow: none;
+  text-align: left;
+  transform: none;
+}
+
+.story-tutorial-popup::after {
+  content: none;
+}
+
+.story-tutorial-popup p {
+  font-size: clamp(0.84rem, 1.5vw, 1rem);
+  line-height: 1.35;
+}
+
+.story-tutorial-actions {
+  min-height: 66px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "note manual"
+    "hint manual";
+  column-gap: 14px;
+  row-gap: 3px;
+  border-top-color: rgba(13, 83, 89, 0.12);
+  padding: 8px 18px;
+  background: #fff;
+}
+
+.story-tutorial-note,
+.story-action-hint {
+  color: var(--muted);
+  text-align: left;
+}
+
+.story-tutorial-note {
+  font-size: 0.72rem;
+}
+
+.story-action-hint {
+  font-size: 0.66rem;
+}
+
+.story-manual-next-button {
+  position: static;
+  grid-area: manual;
+  width: auto;
+  min-width: 116px;
+  min-height: 44px;
+  align-self: center;
+  gap: 1px;
+  border: 1px solid #0f747b;
+  border-radius: 9px;
+  padding: 7px 15px;
+  color: #fff;
+  background: linear-gradient(180deg, #23949b, #116f76);
+  box-shadow: 0 5px 12px rgba(17, 111, 118, 0.18);
+  transform: none;
+  animation: none;
+}
+
+.story-manual-next-button:hover {
+  filter: brightness(1.05);
+  transform: translateY(-1px);
+}
+
+.story-manual-next-button span {
+  font-size: 0.56rem;
+}
+
+.story-manual-next-button strong {
+  font-size: 0.82rem;
+}
+
+.story-tutorial-screen button:focus-visible,
+.story-tutorial-shell:focus-visible {
+  outline-color: #f0b735;
+}
+
+.story-tutorial-world .tutorial-board.board-screen {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  grid-template-rows: 92px minmax(300px, 1fr) 118px;
+  gap: 8px;
+  padding: 8px;
+  overflow: hidden;
+  color: var(--ink);
+  background:
+    radial-gradient(circle at 50% 42%, rgba(92, 193, 185, 0.11), transparent 42%),
+    #f1f7f6;
+}
+
+.story-tutorial-world .tutorial-board.board-screen.is-human-parent {
+  grid-template-rows: 92px minmax(320px, 1fr) 72px;
+}
+
+.tutorial-board .top-seats {
+  padding: 0;
+}
+
+.tutorial-board .opponent-grid {
+  gap: 7px;
+}
+
+.tutorial-board .center-stage {
+  gap: 8px;
+}
+
+.tutorial-board .center-stage,
+.tutorial-board .mouth-panel,
+.tutorial-board .mouth,
+.tutorial-board .self-seat,
+.tutorial-board .self-seat .child-panel {
+  min-height: 0;
+}
+
+.tutorial-board .child-panel,
+.tutorial-board .mouth-panel,
+.tutorial-board .parent-controls {
+  border-radius: 8px;
+}
+
+.tutorial-board .child-panel.is-self {
+  grid-template-columns: 138px minmax(250px, 1fr) minmax(145px, 0.48fr);
+  gap: 7px;
+  padding: 8px 10px;
+}
+
+.tutorial-board .child-panel.is-self .play-card,
+.tutorial-board .child-panel.is-self .escape-supply-card {
+  min-height: 68px;
+}
+
+.tutorial-board .child-panel.is-self .child-meta {
+  font-size: 0.66rem;
+}
+
+.tutorial-board .child-panel.is-self .child-meta span {
+  padding: 4px 7px;
+}
+
+.tutorial-board .child-panel.is-opponent {
+  padding: 6px 8px;
+}
+
+.tutorial-board .mouth {
+  margin-top: 4px;
+}
+
+.tutorial-board .parent-side,
+.tutorial-board .parent-side .panel-block {
+  overflow: visible;
+}
+
+.tutorial-board .parent-controls {
+  height: 100%;
+  align-content: center;
+  padding: 12px;
+}
+
+.tutorial-board .parent-controls .primary-button,
+.tutorial-board .parent-controls .danger-button,
+.tutorial-board .parent-controls .secondary-button {
+  min-height: 42px;
+}
+
+.tutorial-board .is-tutorial-target:not(:disabled),
+.story-tutorial-result-stage .is-tutorial-target:not(:disabled) {
+  position: relative;
+  z-index: 12;
+  outline: 4px solid #ffd04e;
+  outline-offset: 3px;
+  box-shadow:
+    0 0 0 7px rgba(255, 208, 78, 0.2),
+    0 0 22px rgba(255, 193, 42, 0.62);
+  animation: tutorial-live-target 1.35s ease-in-out infinite;
+}
+
+.tutorial-board .escape-supply-card.is-available.is-tutorial-target:not(:disabled) {
+  outline-color: #8ce2ff;
+  box-shadow:
+    0 0 0 7px rgba(92, 205, 255, 0.2),
+    0 0 28px rgba(47, 180, 255, 0.78);
+}
+
+.tutorial-board .tutorial-hand-refill {
+  isolation: isolate;
+}
+
+.tutorial-board .tutorial-board-effect {
+  top: 44%;
+  font-size: clamp(2.2rem, 7vw, 5.4rem);
+}
+
+.tutorial-board-toast {
+  position: absolute;
+  left: 50%;
+  top: 47%;
+  z-index: 30;
+  border: 2px solid rgba(255, 255, 255, 0.9);
+  border-radius: 999px;
+  padding: 9px 18px;
+  color: #fff;
+  background: #25876b;
+  box-shadow: 0 10px 24px rgba(17, 70, 59, 0.3);
+  font-size: 0.86rem;
+  font-weight: 1000;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+}
+
+.tutorial-board-toast.is-ready {
+  top: 43%;
+  background: #116f76;
+  font-size: 1rem;
+}
+
+.story-tutorial-result-stage {
+  padding: 12px;
+  background: #eaf4f2;
+}
+
+.story-tutorial-result-stage .try-result-panel.is-embedded {
+  border-radius: 9px;
+  box-shadow: 0 15px 34px rgba(18, 65, 70, 0.16);
+}
+
+.tutorial-rule-board {
+  height: 100%;
+  max-height: 100%;
+  min-height: 100%;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  gap: 12px;
+  padding: 16px;
+  overflow: auto;
+  background: #eef6f5;
+}
+
+.tutorial-deck-summary,
+.tutorial-special-rules > article {
+  border: 1px solid rgba(13, 83, 89, 0.18);
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 7px 18px rgba(18, 65, 70, 0.08);
+}
+
+.tutorial-deck-summary {
+  padding: 13px;
+}
+
+.tutorial-deck-summary > header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.tutorial-deck-summary > header span {
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 900;
+}
+
+.tutorial-deck-summary > header strong {
+  color: var(--teal-dark);
+  font-size: 1rem;
+}
+
+.tutorial-deck-cards {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(86px, 1fr));
+  gap: 10px;
+}
+
+.tutorial-deck-card {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: auto auto;
+  gap: 4px;
+  align-items: center;
+}
+
+.tutorial-deck-card .play-card {
+  grid-row: 1 / 3;
+  width: 100%;
+  min-height: 126px;
+}
+
+.tutorial-deck-card > strong {
+  color: var(--teal-dark);
+  font-size: 1rem;
+}
+
+.tutorial-deck-card > small {
+  max-width: 70px;
+  color: var(--muted);
+  font-size: 0.56rem;
+  font-weight: 800;
+  line-height: 1.25;
+}
+
+.tutorial-special-rules {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.tutorial-special-rules > article {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 90px minmax(0, 1fr);
+  gap: 11px;
+  align-items: center;
+  padding: 12px;
+}
+
+.tutorial-special-rules > article > div:last-child {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.tutorial-special-rules > article > div:last-child > strong {
+  color: var(--ink);
+  font-size: 0.9rem;
+}
+
+.tutorial-special-rules > article > div:last-child > span {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.tutorial-rule-control {
+  width: 78px;
+}
+
+.tutorial-rule-control .play-card,
+.tutorial-rule-control .escape-supply-card,
+.tutorial-school-control .play-card {
+  width: 78px;
+  min-height: 102px;
+}
+
+.tutorial-school-control {
+  position: relative;
+  width: 100px;
+  min-height: 106px;
+}
+
+.tutorial-school-control .play-card {
+  position: absolute;
+  left: 0;
+  top: 0;
+}
+
+.tutorial-school-control .play-card:nth-child(2) {
+  left: 14px;
+  top: 8px;
+  transform: rotate(5deg);
+}
+
+.tutorial-school-control > b {
+  position: absolute;
+  right: -2px;
+  bottom: 2px;
+  z-index: 4;
+  border-radius: 999px;
+  padding: 4px 7px;
+  color: #fff;
+  background: var(--teal-dark);
+  font-size: 0.7rem;
+}
+
+@keyframes tutorial-live-target {
+  0%, 100% { filter: brightness(1); transform: translateY(0); }
+  50% { filter: brightness(1.06); transform: translateY(-2px); }
+}
+
+@media (max-width: 980px) {
+  .story-tutorial-screen {
+    padding: 6px;
+  }
+
+  .story-tutorial-shell {
+    min-height: calc(100svh - 12px);
+  }
+
+  .story-tutorial-world,
+  .story-tutorial-body.is-result-step .story-tutorial-world {
+    min-height: 670px;
+  }
+
+  .story-tutorial-world .tutorial-board.board-screen {
+    height: 100%;
+    min-height: 0;
+    grid-template-rows: 100px minmax(300px, 1fr) 172px;
+    overflow: hidden;
+  }
+
+  .story-tutorial-world .tutorial-board.board-screen.is-human-parent {
+    grid-template-rows: 100px minmax(340px, 1fr) 70px;
+  }
+
+  .tutorial-board .center-stage {
+    grid-template-columns: minmax(0, 1fr) 200px;
+  }
+
+  .tutorial-board .center-stage.no-parent-controls {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .tutorial-board .mouth {
+    min-height: 0;
+  }
+
+  .tutorial-board .child-panel.is-self {
+    grid-template-columns: 1fr;
+    gap: 5px;
+  }
+
+  .tutorial-board .child-panel.is-self .child-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .tutorial-board .child-panel.is-self .child-header .section-label,
+  .tutorial-board .child-panel.is-self .child-meta {
+    display: none;
+  }
+
+  .tutorial-special-rules {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 650px) {
+  .story-tutorial-header {
+    min-height: 56px;
+    padding: 7px 9px;
+  }
+
+  .story-tutorial-brand h1 {
+    font-size: 0.72rem;
+  }
+
+  .story-tutorial-header-actions button {
+    min-height: 34px;
+    padding-inline: 0.58em;
+    font-size: 0.6rem;
+  }
+
+  .story-tutorial-progress {
+    padding: 0 9px 7px;
+  }
+
+  .story-tutorial-body,
+  .story-tutorial-body.is-result-step {
+    padding: 7px 8px;
+  }
+
+  .story-tutorial-world,
+  .story-tutorial-body.is-result-step .story-tutorial-world {
+    min-height: 680px;
+  }
+
+  .story-tutorial-popup {
+    padding: 7px 10px;
+  }
+
+  .story-tutorial-popup p {
+    font-size: 0.8rem;
+  }
+
+  .story-tutorial-actions {
+    position: static;
+    min-height: 62px;
+    padding: 7px 9px calc(7px + env(safe-area-inset-bottom));
+  }
+
+  .story-tutorial-note {
+    font-size: 0.62rem;
+  }
+
+  .story-action-hint {
+    font-size: 0.56rem;
+  }
+
+  .story-manual-next-button {
+    min-width: 86px;
+    min-height: 40px;
+    padding-inline: 9px;
+  }
+
+  .story-tutorial-world .tutorial-board.board-screen {
+    grid-template-rows: 100px 340px 198px;
+    gap: 6px;
+    padding: 6px;
+  }
+
+  .story-tutorial-world .tutorial-board.board-screen.is-human-parent {
+    grid-template-rows: 100px 470px 68px;
+  }
+
+  .tutorial-board .center-stage {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(0, 1fr) 142px;
+    gap: 6px;
+  }
+
+  .tutorial-board .center-stage.no-parent-controls {
+    grid-template-rows: minmax(0, 1fr);
+  }
+
+  .tutorial-board .parent-controls {
+    padding: 8px;
+  }
+
+  .tutorial-board .parent-controls h2,
+  .tutorial-board .parent-controls .section-label {
+    display: none;
+  }
+
+  .tutorial-board .parent-controls .primary-button,
+  .tutorial-board .parent-controls .danger-button,
+  .tutorial-board .parent-controls .secondary-button {
+    min-height: 38px;
+  }
+
+  .tutorial-board .child-panel.is-self {
+    padding: 7px;
+  }
+
+  .tutorial-board .child-panel.is-self .child-card-area {
+    grid-template-columns: minmax(0, 1fr) 68px;
+    gap: 5px;
+    overflow: visible;
+  }
+
+  .tutorial-board .child-panel.is-self .hand-row {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 5px;
+  }
+
+  .tutorial-board .child-panel.is-self .play-card,
+  .tutorial-board .child-panel.is-self .escape-supply-card {
+    min-height: 88px;
+  }
+
+  .tutorial-board .tutorial-board-effect {
+    top: 40%;
+    font-size: clamp(1.75rem, 9vw, 3rem);
+  }
+
+  .tutorial-board-toast {
+    top: 41%;
+    max-width: calc(100% - 28px);
+    padding: 7px 12px;
+    font-size: 0.72rem;
+    white-space: nowrap;
+  }
+
+  .tutorial-rule-board {
+    padding: 10px;
+  }
+
+  .tutorial-deck-cards {
+    grid-template-columns: repeat(5, 96px);
+    overflow-x: auto;
+    padding: 3px 3px 8px;
+  }
+
+  .tutorial-deck-card .play-card {
+    grid-row: auto;
+    width: 78px;
+    min-height: 112px;
+  }
+
+  .tutorial-deck-card {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto auto;
+    justify-items: center;
+    text-align: center;
+  }
+
+  .tutorial-deck-card > small {
+    max-width: 88px;
+  }
+
+  .tutorial-special-rules > article {
+    grid-template-columns: 82px minmax(0, 1fr);
+    padding: 9px;
+  }
+
+  .story-tutorial-result-stage {
+    padding: 7px;
+  }
+}
+
+@media (max-height: 560px) and (orientation: landscape) {
+  .story-tutorial-world,
+  .story-tutorial-body.is-result-step .story-tutorial-world {
+    min-height: 610px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tutorial-board .is-tutorial-target:not(:disabled),
+  .story-tutorial-result-stage .is-tutorial-target:not(:disabled) {
+    animation: none;
+  }
+}
