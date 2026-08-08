@@ -221,7 +221,7 @@ const cpuTuning = {
     randomPoisonChance: 0.015,
     poisonRemovalChance: 0.96,
     closeScore: 6,
-    delays: { open: [500, 900], poison: [320, 620], close: [4100, 7000], secure: [550, 1050], child: [560, 1220] }
+    delays: { open: [525, 950], poison: [350, 680], close: [4250, 7300], secure: [600, 1150], child: [600, 1360] }
   },
   expert: {
     escapeMultiplier: 1.25,
