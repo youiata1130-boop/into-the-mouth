@@ -457,7 +457,6 @@ const pointerClickFallbackTimerIds = new Map<number, number>();
 const protectedKeyboardButtons = new Map<string, HTMLButtonElement>();
 const keyboardClickFallbackTimerIds = new Map<string, number>();
 let tutorialStep: number | null = null;
-let tutorialReturnToRules = false;
 let tutorialAutoTimerId: number | null = null;
 let tutorialActionUnlockTimerId: number | null = null;
 let tutorialActionUnlockStep: number | null = null;
@@ -565,13 +564,11 @@ function renderLoadingScreen(loadedCount: number, totalCount: number): void {
           <span class="loading-creature-glow"></span>
           <img class="loading-whale-art" src="${whaleArtPaths.open}" alt="">
         </div>
-        <p class="start-eyebrow">DIVING INTO THE GAME</p>
         <h1 id="loading-title">ゲームを準備中</h1>
-        <p class="loading-message" role="status" aria-live="polite">海の仲間を呼んでいます… ${progress}%</p>
+        <p class="loading-message" role="status" aria-live="polite">読み込み中 ${progress}%</p>
         <div class="loading-track" role="progressbar" aria-label="画像の読み込み状況" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${progress}">
           <span style="width: ${progress}%"></span>
         </div>
-        <p class="loading-count">${loadedCount} / ${totalCount}</p>
       </section>
     </main>
   `;
@@ -1181,14 +1178,14 @@ function openOnlineLobby(): void {
   modeSetupOpen = false;
   onlineLobbyOpen = true;
   onlineLobbyView = "choice";
-  onlineStatus = "部屋を作るか、友達の部屋に参加するかを選んでください。";
+  onlineStatus = "";
   render();
 }
 
 function showOnlineLobbyView(view: OnlineLobbyView): void {
   if (onlineRole !== "none") return;
   onlineLobbyView = view;
-  onlineStatus = view === "choice" ? "遊び方を選んでください。" : "";
+  onlineStatus = "";
   render();
 }
 
@@ -1207,7 +1204,7 @@ function createOnlineRoom(): void {
 
   onlinePeer = new Peer(`into-mouth-${roomCode}`);
   onlinePeer.on("open", () => {
-    onlineStatus = "参加者を待っています。コードを友達に送ってください。";
+    onlineStatus = "";
     render();
   });
   onlinePeer.on("connection", attachGuestConnection);
@@ -1279,7 +1276,7 @@ function attachGuestConnection(connection: DataConnection): void {
     onlinePlayerNames.set(availableId, sanitizePlayerName(metadata?.playerName, `プレイヤー${onlineHumanPlayerIds.size}`));
     updateOnlineLobbyMembers();
     connection.send({ type: "welcome", playerId: availableId, roomCode });
-    onlineStatus = "友達が参加しました。ゲームを開始できます。";
+    onlineStatus = "";
     broadcastOnlineLobby();
     render();
   });
@@ -1300,7 +1297,7 @@ function attachGuestConnection(connection: DataConnection): void {
 
 function attachHostConnection(connection: DataConnection): void {
   connection.on("open", () => {
-    onlineStatus = "接続しました。ホストが開始するのを待っています。";
+    onlineStatus = "";
     render();
   });
   connection.on("data", (data) => handleGuestMessage(data));
@@ -1390,12 +1387,12 @@ function handleGuestMessage(raw: unknown): void {
     onlineJoinRejected = false;
     localPlayerId = message.playerId;
     onlineHumanPlayerIds.add(message.playerId);
-    onlineStatus = "接続しました。ホストが開始するのを待っています。";
+    onlineStatus = "";
     render();
   } else if (message.type === "lobby" && message.members) {
     onlineJoinRejected = false;
     onlineLobbyMembers = message.members;
-    onlineStatus = "ホストがゲームを開始するのを待っています。";
+    onlineStatus = "";
     render();
   } else if (message.type === "state" && message.state) {
     applyOnlineState(message.state);
@@ -1809,13 +1806,6 @@ function getFishCardLabel(card: FishCard | FishBoxCard): string {
 
 function getSchoolVisualFishCount(card: Pick<FishCard, "schoolSize">): number {
   return card.schoolSize ?? 1;
-}
-
-function getLiveMouthFishCount(): number {
-  return getLiveMouthNumericCards().reduce(
-    (total, card) => total + (card.type === "fish" ? getSchoolVisualFishCount(card) : 0),
-    0
-  );
 }
 
 function playPoison(player: Player, slotIndex: number): void {
@@ -2794,7 +2784,6 @@ function render(runGameSideEffects = true): void {
     return;
   }
 
-  const rulesWereOpen = appRoot.querySelector<HTMLDetailsElement>(".rules-panel")?.open ?? false;
   const resultWasVisible = appRoot.querySelector(".try-result-panel") !== null;
   const replayWasVisible = appRoot.querySelector(".try-replay-panel") !== null;
   const focusedChild = getFocusedChild();
@@ -2802,7 +2791,7 @@ function render(runGameSideEffects = true): void {
 
   appRoot.innerHTML = `
     <main class="app-shell">
-      <section class="board-screen" aria-label="ゲーム盤面">
+      <section class="board-screen${isHumanParent() ? " is-human-parent" : ""}" aria-label="ゲーム盤面">
         ${renderGameEffect()}
         <section class="top-seats" aria-label="他の子プレイヤー"${isTryEnded ? " inert" : ""}>
           <div class="opponent-grid">
@@ -2831,7 +2820,7 @@ function render(runGameSideEffects = true): void {
           }
         </section>
 
-        <section class="self-seat" aria-label="自分の子プレイヤー"${isTryEnded ? " inert" : ""}>
+        <section class="self-seat" aria-label="自分の席"${isTryEnded ? " inert" : ""}>
           ${focusedChild ? renderChildPanel(focusedChild, getChildIndex(focusedChild), "self") : renderHumanParentSeat()}
         </section>
 
@@ -2846,17 +2835,10 @@ function render(runGameSideEffects = true): void {
 
       <section class="detail-screen" id="details" aria-label="詳細情報"${isTryEnded ? " inert" : ""}>
         <header class="app-header">
-          <div>
-            <p class="eyebrow">リアルタイム捕食ゲーム</p>
-            <h1>口に入る</h1>
-          </div>
+          <h1>口に入る</h1>
           <div class="status-strip" aria-label="現在の状態">
-            ${renderStat("人数", `${playerCount}人`)}
-            ${renderStat("親", getParent().name)}
-            ${renderStat("親ラウンド", `${Math.min(completedParentRounds + 1, playerCount)}/${playerCount}`)}
+            ${renderStat("ラウンド", `${Math.min(completedParentRounds + 1, playerCount)}/${playerCount}`)}
             ${renderStat("トライ", `${currentTry}/${maxTriesPerParent}`)}
-            ${renderStat("口", getMouthStatusLabel())}
-            ${renderStat("泳ぐ魚", `${getLiveMouthFishCount()}匹`)}
           </div>
         </header>
 
@@ -2864,8 +2846,8 @@ function render(runGameSideEffects = true): void {
           gameMode === "online"
             ? `
               <section class="setup-bar compact-setup online-game-settings" aria-label="オンラインゲーム設定">
-                <p><strong>オンライン対戦中</strong><span>部屋の設定はゲーム開始時に固定されています</span></p>
-                <button class="text-button" type="button" data-action="back-to-title">タイトルへ戻る</button>
+                <strong>オンライン</strong>
+                <button class="text-button" type="button" data-action="back-to-title">タイトル</button>
               </section>
             `
             : `
@@ -2882,26 +2864,19 @@ function render(runGameSideEffects = true): void {
                     ${renderParentOptions()}
                   </select>
                 </label>
-                <button class="secondary-button" type="button" data-action="apply-setup" ${isMouthOpen ? " disabled" : ""}>この設定で新しく開始</button>
-                <button class="text-button" type="button" data-action="reset-game">全体を初期化</button>
-                <button class="text-button" type="button" data-action="back-to-title">タイトルへ戻る</button>
+                <button class="secondary-button" type="button" data-action="apply-setup" ${isMouthOpen ? " disabled" : ""}>設定を反映</button>
+                <button class="text-button" type="button" data-action="reset-game">リセット</button>
+                <button class="text-button" type="button" data-action="back-to-title">タイトル</button>
               </section>
             `
         }
 
-        <section class="bottom-info" aria-label="ログと細かい情報">
-          ${renderRoundControls()}
+        <section class="bottom-info" aria-label="得点">
           ${renderScoreboard()}
-          ${renderPoisonStatus()}
-          ${renderLog()}
-          ${renderRulesSummary()}
         </section>
       </section>
     </main>
   `;
-
-  const rulesPanel = appRoot.querySelector<HTMLDetailsElement>(".rules-panel");
-  if (rulesPanel) rulesPanel.open = rulesWereOpen;
 
   const replayPanel = appRoot.querySelector<HTMLElement>(".try-replay-panel");
   const resultPanel = appRoot.querySelector<HTMLElement>(".try-result-panel");
@@ -2921,19 +2896,18 @@ function render(runGameSideEffects = true): void {
 
 function renderPlayerCountScreen(): string {
   const modeLabels: Record<GameMode, string> = {
-    cpu: "CPUと対戦",
-    online: "友達とオンライン対戦"
+    cpu: "CPU対戦",
+    online: "オンライン対戦"
   };
   return `
     <main class="start-screen">
       <section class="start-card count-screen" aria-labelledby="count-title">
         <p class="start-eyebrow">${modeLabels[pendingGameMode]}</p>
-        <h1 id="count-title">人数を選択</h1>
-        <p class="start-lead">3〜6人から、今回のゲームに参加する人数を選んでください。</p>
+        <h1 id="count-title">人数</h1>
         ${renderPlayerCountOptions()}
         ${renderCpuDifficultyOptions()}
-        <button class="primary-button count-confirm" type="button" data-action="confirm-player-count">${draftPlayerCount}人で進む</button>
-        <button class="text-button back-title" type="button" data-action="back-to-title">モード選択へ戻る</button>
+        <button class="primary-button count-confirm" type="button" data-action="confirm-player-count">${draftPlayerCount}人で開始</button>
+        <button class="text-button back-title" type="button" data-action="back-to-title">戻る</button>
       </section>
     </main>
   `;
@@ -2951,18 +2925,18 @@ function renderPlayerCountOptions(minimumPlayerCount = 3): string {
 }
 
 function renderCpuDifficultyOptions(title = "CPUの強さ"): string {
-  const options: Array<{ id: CpuDifficulty; label: string; detail: string }> = [
-    { id: "easy", label: "弱い", detail: "ゆっくり・ミス多め" },
-    { id: "normal", label: "ふつう", detail: "標準的な判断" },
-    { id: "hard", label: "強い", detail: "素早く正確" },
-    { id: "advanced", label: "達人", detail: "先読み・わずかに隙あり" },
-    { id: "expert", label: "最強", detail: "先読み・ミスなし" }
+  const options: Array<{ id: CpuDifficulty; label: string }> = [
+    { id: "easy", label: "弱い" },
+    { id: "normal", label: "ふつう" },
+    { id: "hard", label: "強い" },
+    { id: "advanced", label: "達人" },
+    { id: "expert", label: "最強" }
   ];
   return `
     <section class="difficulty-section" aria-labelledby="difficulty-title">
       <h2 id="difficulty-title">${title}</h2>
       <div class="difficulty-options" role="group" aria-label="CPUの強さ">
-        ${options.map((option) => `<button class="difficulty-option${cpuDifficulty === option.id ? " selected" : ""}" type="button" data-cpu-difficulty="${option.id}" aria-pressed="${cpuDifficulty === option.id}"><strong>${option.label}</strong><small>${option.detail}</small></button>`).join("")}
+        ${options.map((option) => `<button class="difficulty-option${cpuDifficulty === option.id ? " selected" : ""}" type="button" data-cpu-difficulty="${option.id}" aria-pressed="${cpuDifficulty === option.id}"><strong>${option.label}</strong></button>`).join("")}
       </div>
     </section>
   `;
@@ -2978,25 +2952,22 @@ function renderStartScreen(): string {
           <img src="${whaleArtPaths.fed}" alt="">
         </div>
         <h1 id="game-title">口に入る</h1>
-        <p class="mode-heading">遊び方を選ぶ</p>
         <div class="mode-grid" aria-label="対戦モードを選択">
           <button class="mode-card mode-card-cpu" type="button" data-action="start-cpu">
             <span class="mode-card-art" aria-hidden="true"><img src="${fishArtPaths[5]}" alt=""></span>
             <span class="mode-card-copy">
-              <strong>CPUと対戦</strong>
-              <small>強さを選んですぐに遊ぶ</small>
+              <strong>CPU対戦</strong>
             </span>
           </button>
           <button class="mode-card mode-card-online" type="button" data-action="open-online-lobby">
             <span class="mode-card-art" aria-hidden="true"><img src="${fishArtPaths[3]}" alt=""></span>
             <span class="mode-card-copy">
-              <strong>友達とオンライン対戦</strong>
-              <small>合言葉で部屋を作る・入る</small>
+              <strong>オンライン対戦</strong>
             </span>
           </button>
         </div>
         <button class="tutorial-entry" type="button" data-action="open-tutorial">
-          <strong>ルール説明</strong>
+          <strong>チュートリアル</strong>
         </button>
       </section>
     </main>
@@ -3004,7 +2975,6 @@ function renderStartScreen(): string {
 }
 
 function openTutorial(): void {
-  tutorialReturnToRules = appRoot.querySelector<HTMLDetailsElement>(".rules-panel")?.open ?? false;
   clearNpcTimers();
   clearTutorialAutoAdvance();
   resetTutorialActionUnlock();
@@ -3013,27 +2983,17 @@ function openTutorial(): void {
 }
 
 function closeTutorial(): void {
-  const shouldRestoreRules = tutorialReturnToRules;
   clearTutorialAutoAdvance();
   resetTutorialActionUnlock();
-  tutorialReturnToRules = false;
   tutorialStep = null;
   render();
-
-  const rulesPanel = appRoot.querySelector<HTMLDetailsElement>(".rules-panel");
-  if (shouldRestoreRules && rulesPanel) rulesPanel.open = true;
-
-  const tutorialButton = shouldRestoreRules
-    ? rulesPanel?.querySelector<HTMLButtonElement>('button[data-action="open-tutorial"]')
-    : appRoot.querySelector<HTMLButtonElement>('button[data-action="open-tutorial"]');
-  tutorialButton?.focus({ preventScroll: true });
+  appRoot.querySelector<HTMLButtonElement>('button[data-action="open-tutorial"]')?.focus({ preventScroll: true });
 }
 
 function returnFromTutorialToTitle(): void {
   if (hasStarted && !confirmDiscardProgress()) return;
   clearTutorialAutoAdvance();
   resetTutorialActionUnlock();
-  tutorialReturnToRules = false;
   tutorialStep = null;
   clearActiveGameForTitle();
   renderGameLaunchScreen();
@@ -3678,24 +3638,20 @@ function renderOnlineLobby(): string {
   return `
     <main class="start-screen">
       <section class="start-card online-lobby${isWaitingRoom ? " is-waiting-room" : ""}" aria-labelledby="online-title">
-        <p class="start-eyebrow">${isWaitingRoom ? "WAITING ROOM" : "ONLINE ROOM"}</p>
         <h1 id="online-title">${pageTitle}</h1>
         ${
           isHost
             ? `
-              <p class="waiting-room-copy">友達に参加コードを送り、この画面で参加を待ちます。</p>
               <p class="room-label">参加コード</p>
               <div class="room-code" aria-label="参加コード ${roomCode}">${roomCode || "------"}</div>
               ${renderOnlineWaitingCount()}
               <p class="online-status" role="status" aria-live="polite">${onlineStatus}</p>
               <button class="primary-button lobby-action" type="button" data-action="start-online-game" ${canStart ? "" : "disabled"}>${canStart ? "ゲームを開始" : "友達の参加を待っています"}</button>
-              ${canStart ? "" : `<p class="lobby-hint">友達が1人以上参加すると開始できます。</p>`}
             `
             : isGuest
               ? onlineJoinRejected
                 ? `
                   <div class="online-error-mark" aria-hidden="true">!</div>
-                  <p class="start-lead">このコードでは参加できませんでした。</p>
                   <p class="online-status" role="status" aria-live="polite">${onlineStatus}</p>
                   <button class="secondary-button lobby-action" type="button" data-action="retry-online-join">参加コードを入力し直す</button>
                 `
@@ -3706,7 +3662,7 @@ function renderOnlineLobby(): string {
                 `
               : renderOnlineEntry()
         }
-        <button class="text-button back-title" type="button" data-action="back-to-title">タイトルへ戻る</button>
+        <button class="text-button back-title" type="button" data-action="back-to-title">タイトル</button>
       </section>
     </main>
   `;
@@ -3715,17 +3671,14 @@ function renderOnlineLobby(): string {
 function renderOnlineEntry(): string {
   if (onlineLobbyView === "choice") {
     return `
-      <p class="start-lead">オンライン対戦の始め方を選んでください。</p>
       <div class="online-entry-options" aria-label="部屋を作るか参加するかを選択">
         <button class="online-entry-card is-create" type="button" data-action="choose-create-room">
           <span class="online-entry-icon" aria-hidden="true">作</span>
           <strong>部屋を作る</strong>
-          <small>人数と、空き枠に入るCPUの強さを決める</small>
         </button>
         <button class="online-entry-card is-join" type="button" data-action="choose-join-room">
           <span class="online-entry-icon" aria-hidden="true">入</span>
-          <strong>部屋に参加する</strong>
-          <small>友達から届いた6文字のコードで参加する</small>
+          <strong>参加する</strong>
         </button>
       </div>
       <p class="online-status" role="status" aria-live="polite">${onlineStatus}</p>
@@ -3736,16 +3689,15 @@ function renderOnlineEntry(): string {
     return `
       <section class="online-setup-panel" aria-labelledby="join-room-title">
         <h2 id="join-room-title">部屋に参加する</h2>
-        <p class="online-setup-copy">表示名と、友達から届いた参加コードを入力してください。</p>
         <div class="online-form">
           <label for="join-player-name-input">あなたの表示名</label>
           <input id="join-player-name-input" name="playerName" value="${escapeHtml(draftPlayerName)}" maxlength="12" autocomplete="nickname" placeholder="あなたの名前">
           <label for="room-code-input">6文字の参加コード</label>
           <input class="room-code-input" id="room-code-input" name="roomCode" value="${draftRoomCode}" maxlength="6" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABC234">
-          <button class="primary-button lobby-action" type="button" data-action="join-room">この部屋に参加する</button>
+          <button class="primary-button lobby-action" type="button" data-action="join-room">参加する</button>
         </div>
         <p class="online-status" role="status" aria-live="polite">${onlineStatus}</p>
-        <button class="text-button" type="button" data-action="back-online-choice">選択に戻る</button>
+        <button class="text-button" type="button" data-action="back-online-choice">戻る</button>
       </section>
     `;
   }
@@ -3753,21 +3705,18 @@ function renderOnlineEntry(): string {
   return `
     <section class="online-setup-panel" aria-labelledby="create-room-title">
       <h2 id="create-room-title">部屋を作る</h2>
-      <p class="online-setup-copy">あなたがホストです。全体の人数と、友達が入らなかった席のCPUレベルを設定します。</p>
       <div class="online-form online-host-name">
         <label for="host-player-name-input">あなたの表示名</label>
         <input id="host-player-name-input" name="playerName" value="${escapeHtml(draftPlayerName)}" maxlength="12" autocomplete="nickname" placeholder="あなたの名前">
       </div>
       <fieldset class="online-setting-group">
-        <legend>合計プレイ人数</legend>
-        <p>ホスト・参加する友達・CPUを合わせた人数です。</p>
+        <legend>合計人数</legend>
         ${renderPlayerCountOptions()}
       </fieldset>
-      ${renderCpuDifficultyOptions("残りのCPUの強さ")}
-      <p class="online-cpu-note">友達が1人以上参加すると開始できます。合計${draftPlayerCount}人になるように、残りの空き席へCPUが入ります。</p>
-      <button class="primary-button lobby-action" type="button" data-action="create-room">この設定で部屋を作る</button>
+      ${renderCpuDifficultyOptions("空き席のCPU")}
+      <button class="primary-button lobby-action" type="button" data-action="create-room">部屋を作る</button>
       <p class="online-status" role="status" aria-live="polite">${onlineStatus}</p>
-      <button class="text-button" type="button" data-action="back-online-choice">選択に戻る</button>
+      <button class="text-button" type="button" data-action="back-online-choice">戻る</button>
     </section>
   `;
 }
@@ -3775,16 +3724,9 @@ function renderOnlineEntry(): string {
 function renderOnlineWaitingCount(): string {
   const participantCount = onlineLobbyMembers.length;
   const countLabel = participantCount > 0 ? `${participantCount}人が参加中` : "参加人数を確認中";
-  const note = participantCount === 0
-    ? "部屋に接続しています"
-    : participantCount === 1
-      ? "ホストを含む現在の人数です"
-      : "ホストを含む現在の参加人数です";
   return `
     <section class="online-waiting-count" role="status" aria-live="polite" aria-atomic="true" aria-label="${countLabel}">
-      <span>現在の参加人数</span>
-      ${participantCount > 0 ? `<strong><b>${participantCount}</b>人</strong>` : '<strong class="is-connecting">確認中</strong>'}
-      <small>${note}</small>
+      ${participantCount > 0 ? `<strong><b>${participantCount}</b>人参加</strong>` : '<strong class="is-connecting">接続中</strong>'}
     </section>
   `;
 }
@@ -3801,46 +3743,6 @@ function getChildIndex(player: Player): number {
   return getChildren().findIndex((child) => child.id === player.id);
 }
 
-function renderRulesSummary(): string {
-  return `
-    <details class="rules-panel compact-rules">
-      <summary>ルール</summary>
-      <button class="tutorial-inline-button" type="button" data-action="open-tutorial">物語チュートリアルを見る</button>
-      <div>
-        <p class="section-label">進行と捕食</p>
-        <ul>
-          <li>親1人につき必ず3トライ行い、その後に親を交代します。</li>
-          <li>各子の山札は魚2×3、魚3×3、魚4×1、魚6×1、毒魚×1の9枚です。魚6にはサメの絵を使います。</li>
-          <li>山札と公開札はトライ間で引き継ぎ、親交代時に補給します。逃げる専用カードは山札に混ぜず、隣に置きます。</li>
-          <li>魚を出すと直前から逆順に比べ、大きい魚が小さい魚を食べます。先に大きい魚がいた場合は、後から出した小さい魚が食べられます。</li>
-          <li>同じ強さでは後から出した魚が先の魚を食べます。食べられた魚が抱えていた魚も、まとめて捕食した魚へ引き継がれます。</li>
-          <li>口の中は固定画面で、数字が小さい魚ほど小さく、大きい魚ほど大きく表示されます。</li>
-          <li>魚は数字に関係なく出せます。</li>
-          <li>魚を出した子、口を開けた親、毒魚を取り除いた親だけ約1.2秒待ちます。ほかのプレイヤーはすぐ行動できます。</li>
-          <li>口が開いている間、同じ2同士または3同士を2枚重ねると、2匹の群れになります。強さはカードの合計です。</li>
-          <li>2匹の群れには、さらに同じ種類を1枚追加でき、3匹の群れになります。強さは2の群れなら6、3の群れなら9です。完成した群れは1枚の魚として出し、分けることはできません。</li>
-          <li>群れを作って空いた公開枠には、山札があれば即座に1枚補充します。</li>
-          <li>得点時は、得点する人自身が出したカードを除き、食べた数字カードを得点します。</li>
-          <li>逃げる専用カードは各トライ1回だけ使えます。成功時は、逃げる魚自身と同じ子が以前に出した魚を除いて得点します。</li>
-          <li>最初の餌「1」は親自身のカードです。ほかに魚がいないまま親が閉じても0点です。</li>
-          <li>親が閉じたら、自身の餌・毒魚・逃げる・毒魚で得点化済みの魚を除いた数字カードを得点します。</li>
-        </ul>
-      </div>
-      <div>
-        <p class="section-label">効果なしと毒魚</p>
-        <ul>
-          <li>得点候補がない状態で逃げる専用カードを使うと効果はありませんが、そのトライでは使用済みになります。次のトライで再び使えます。</li>
-          <li>自分の毒魚に続けて出した魚も、効果も得点価値も持ちません。</li>
-          <li>毒魚の後に毒魚が出ると、得点の権利は後の子へ移ります。</li>
-          <li>毒魚があっても、権利を持つ子は逃げられます。</li>
-          <li>親は口が開いていて毒魚が有効な間、時間制限なく除去できます。</li>
-          <li>山札と公開札を使い切っても、未使用の逃げる専用カードは使えます。専用カードも使用済みなら、そのトライでは行動できません。</li>
-        </ul>
-      </div>
-    </details>
-  `;
-}
-
 function renderHumanParentSeat(): string {
   const parent = getParent();
 
@@ -3848,12 +3750,11 @@ function renderHumanParentSeat(): string {
     <article class="child-panel is-self human-parent-seat ${getPlayerToneClass(parent.id)}">
       <header class="child-header">
         <div>
-          <p class="section-label">あなたの番</p>
+          <p class="section-label">あなたが親</p>
           <h3>${renderPlayerIdentity(parent)}</h3>
         </div>
         <strong>${parent.score}点</strong>
       </header>
-      <p class="notice">あなたは親です。中央の口を操作してください。</p>
     </article>
   `;
 }
@@ -3887,7 +3788,7 @@ function renderParentControls(showRoundActions = true): string {
   const canOpen = parentIsHuman && !isGameOver && !isMouthOpen && !isTryEnded && !parentIsWaitingAfterOwnAction;
   const canClose = parentIsHuman && !isGameOver && isMouthOpen && !parentIsWaitingAfterOwnAction;
   const canRemovePoison = parentIsHuman && !isGameOver && isMouthOpen && activePoison && !parentIsWaitingAfterOwnAction;
-  const waitTitle = "自分が行動した後の待ち時間です。少し待つと、また操作できます。";
+  const waitTitle = "待機中";
 
   return `
     <section class="panel-block parent-controls${parentIsWaitingAfterOwnAction ? " is-action-waiting" : ""} ${getPlayerToneClass(parent.id)}"${parentIsWaitingAfterOwnAction ? ' aria-busy="true"' : ""}>
@@ -3904,19 +3805,8 @@ function renderParentControls(showRoundActions = true): string {
       <button class="secondary-button wide" type="button" data-action="remove-poison"${canRemovePoison ? "" : " disabled"}${parentIsWaitingAfterOwnAction ? ` title="${waitTitle}"` : ""}>
         毒魚を取り除く
       </button>
-      ${parentIsWaitingAfterOwnAction ? '<p class="microcopy action-wait-notice" role="status">行動後の待ち時間です。ほかのプレイヤーは操作できます。</p>' : ""}
+      ${parentIsWaitingAfterOwnAction ? '<p class="microcopy action-wait-notice" role="status">待機中</p>' : ""}
       ${showRoundActions ? renderRoundActionButtons() : ""}
-    </section>
-  `;
-}
-
-function renderRoundControls(): string {
-  return `
-    <section class="panel-block">
-      <p class="section-label">進行</p>
-      <div class="round-actions">
-        ${renderRoundActionButtons()}
-      </div>
     </section>
   `;
 }
@@ -3958,19 +3848,14 @@ function renderTryReplayOverlay(): string {
       role="dialog"
       aria-modal="true"
       aria-labelledby="try-replay-title"
-      aria-describedby="try-replay-description"
       tabindex="-1"
     >
       <div class="try-replay-header">
         <div>
-          <p class="section-label">得点確定</p>
-          <h2 id="try-replay-title">この回の捕食リプレイ</h2>
+          <h2 id="try-replay-title">捕食リプレイ</h2>
         </div>
         <button class="text-button try-replay-skip" type="button" data-action="skip-try-replay">スキップ</button>
       </div>
-      <p id="try-replay-description" class="try-replay-description">
-        魚が泳いで現れ、大きな魚が小さな魚を食べた流れを再生します。
-      </p>
       <div class="try-replay-stage">
         <div class="try-replay-callout-layer" aria-hidden="true">
           ${schedule.events
@@ -4386,8 +4271,7 @@ function renderTryResultOverlay(view?: TryResultView): string {
   return `
     <section class="try-result-panel${view?.embedded ? " is-embedded" : ""}" ${accessibility}>
       <div class="try-result-header">
-        <p class="section-label">1回終了</p>
-        <h2 id="try-result-title">${resultIsGameOver ? "ゲーム終了" : "この回の結果"}</h2>
+        <h2 id="try-result-title">${resultIsGameOver ? "ゲーム終了" : "結果"}</h2>
       </div>
       ${resultIsGameOver ? renderWinnerNotice() : ""}
       <div class="try-result-grid">
@@ -4423,7 +4307,6 @@ function renderTryResultOverlay(view?: TryResultView): string {
         </section>
         <section>
           <p class="section-label">カード順</p>
-          <p class="try-order-caption">左から、箱に入った順です。</p>
           <div class="try-card-track" aria-label="このトライのカード順">
             ${resultCards.map((card) => renderTryTimelineCard(card, resultCards)).join("")}
             ${renderTryEndMarker(resultEndReason)}
@@ -4522,13 +4405,12 @@ function renderRoundActionButtons(): string {
 
   const shouldAdvanceParent = currentTry >= maxTriesPerParent;
   const action = shouldAdvanceParent ? "advance-parent" : "next-try";
-  const label = shouldAdvanceParent ? "次のトライ（親の交代）" : "次のトライ";
+  const label = shouldAdvanceParent ? "親を交代" : "次のトライ";
 
   return `<button class="secondary-button" type="button" data-action="${action}"${isTryEnded ? "" : " disabled"}>${label}</button>`;
 }
 
 function renderMouth(): string {
-  const liveFishCount = getLiveMouthFishCount();
   const mouthClass = isMouthOpen
     ? "is-open"
     : biteAftermath
@@ -4548,10 +4430,7 @@ function renderMouth(): string {
           ${renderMouthFishScene()}
         </div>
       </div>
-      <div class="cavity-meta">
-        <span>泳いでいる魚 ${liveFishCount}匹</span>
-        <span>${activePoison ? `毒魚: ${activePoison.ownerName}` : "毒魚なし"}</span>
-      </div>
+      ${activePoison ? `<div class="cavity-meta"><span>毒魚 ${activePoison.ownerName}</span></div>` : ""}
       <div class="jaw jaw-bottom" aria-hidden="true">
         <span></span><span></span><span></span><span></span><span></span>
       </div>
@@ -4823,22 +4702,6 @@ function getPoisonCardStatusLabel(status: PoisonCardStatus): string {
   return "終了で無効";
 }
 
-function renderPoisonStatus(): string {
-  const content = activePoison
-    ? `
-      <p class="poison-live">${activePoison.ownerName} の毒魚が有効です。</p>
-      <p>親は毒魚が有効な間、時間制限なく取り除けます。残したまま口を閉じると、${activePoison.ownerName} に10点が入ります。</p>
-    `
-    : "<p>有効な毒魚はありません。発動済みの毒魚は無効として箱に残ります。</p>";
-
-  return `
-    <section class="panel-block">
-      <p class="section-label">毒魚</p>
-      ${content}
-    </section>
-  `;
-}
-
 function renderScoreboard(): string {
   return `
     <section class="panel-block">
@@ -4863,33 +4726,10 @@ function renderScoreboard(): string {
   `;
 }
 
-function renderLog(): string {
-  const content = isMouthOpen
-    ? '<p class="concealed-log">一番上以外のカード履歴は、トライ終了後に公開されます。</p>'
-    : `<ol class="log-list">${logEntries.map((entry) => `<li>${entry}</li>`).join("")}</ol>`;
-
-  return `
-    <section class="panel-block">
-      <p class="section-label">ログ</p>
-      ${content}
-    </section>
-  `;
-}
-
 function renderChildPanel(player: Player, index: number, variant: "opponent" | "self" = "self"): string {
   const isSelf = variant === "self";
   const isWaitingAfterOwnAction = isPlayerWaitingAfterOwnAction(player.id);
-  const label = isSelf ? "あなたの子プレイヤー" : (childLabels[index] ?? `子${index + 1}`);
-  const candidates = getPlayerCandidates(player.id);
-  const latestCandidate = candidates.at(-1);
-  const hasNoCards = player.faceUp.every((card) => card === null) && player.drawPile.length === 0;
-  const candidateText = hasNoCards
-    ? player.escapeUsedThisTry
-      ? "通常カードなし・このトライでは行動終了"
-      : "通常カードなし・逃げる専用カードは使用可能"
-    : latestCandidate
-    ? `逃げ対象: ${getFishCardLabel(latestCandidate)} / ${sumCapturedIds(latestCandidate.capturedIds, player.id)}点`
-    : "有効な得点候補なし";
+  const label = isSelf ? "あなた" : (childLabels[index] ?? `子${index + 1}`);
 
   return `
     <article class="child-panel is-${variant}${isWaitingAfterOwnAction ? " is-card-waiting" : ""} ${getPlayerToneClass(player.id)}">
@@ -4897,6 +4737,7 @@ function renderChildPanel(player: Player, index: number, variant: "opponent" | "
         <div>
           <p class="section-label">${label}</p>
           <h3>${renderPlayerIdentity(player)}</h3>
+          ${isSelf && isWaitingAfterOwnAction ? '<span class="action-wait-badge" role="status">待機中</span>' : ""}
         </div>
         <strong>${player.score}点</strong>
       </header>
@@ -4910,12 +4751,10 @@ function renderChildPanel(player: Player, index: number, variant: "opponent" | "
         isSelf
           ? `
             <div class="child-meta">
-              <span>${candidateText}</span>
-              <span>山札 ${player.drawPile.length} / 使用済み ${getUsedPhysicalCardCount(player)}</span>
-              <span>群れ作りには待ち時間がありません。同じ2・3を重ね、2匹の群れには同じ種類をもう1枚追加できます</span>
+              <span>山札 ${player.drawPile.length} · 使用済み ${getUsedPhysicalCardCount(player)}</span>
             </div>
           `
-          : `<p class="microcopy">${candidateText}</p>`
+          : ""
       }
     </article>
   `;
@@ -4951,7 +4790,7 @@ function renderHandRefillSlot(
   const elapsedMs = Math.min(handRefillMotionDurationMs, Math.round(visualState.elapsedMs));
   return `
     <div class="hand-slot is-hand-refilling" style="--hand-refill-elapsed: -${elapsedMs}ms">
-      <div class="play-card empty-card hand-refill-gap" aria-hidden="true"><span>カードを出した！</span></div>
+      <div class="play-card empty-card hand-refill-gap" aria-hidden="true"></div>
       <div class="play-card ${getHandCardVisualClass(visualState.motion.outgoingCard)} hand-refill-outgoing" aria-hidden="true">
         ${renderHandCardContents(visualState.motion.outgoingCard)}
       </div>
@@ -4970,24 +4809,21 @@ function renderHandSlot(player: Player, card: PlayerCard | null, slotIndex: numb
   }
 
   const isWaitingAfterOwnAction = isPlayerWaitingAfterOwnAction(player.id);
+  const isLocalPlayer = player.id === localPlayerId;
   const canInteract =
-    player.id === localPlayerId &&
+    isLocalPlayer &&
     player.role === "child" &&
     isMouthOpen &&
     !isGameOver;
   const canUse = canInteract && !isWaitingAfterOwnAction;
   const unavailableTitle = isWaitingAfterOwnAction
-    ? "自分がカードを出した後の待ち時間です。少し待つと、また出せます。"
-    : "口が開いている間だけ使用できます。";
-  const ownPoisonMakesFishIneffective = card.type === "fish" && activePoison?.ownerId === player.id;
+    ? "待機中"
+    : "口が閉じています";
   const fishLabel = card.type === "fish" ? getFishCardLabel(card) : "";
-  const playLabel = ownPoisonMakesFishIneffective
-    ? `${fishLabel}を出す（自分の毒魚直後のため効果なし）`
-    : card.type === "poison" && activePoison
-      ? "毒魚を出して得点の権利を奪う"
-      : card.type === "poison"
-        ? "毒魚を出す"
-        : `${fishLabel}を出す`;
+  const playLabel = card.type === "poison" ? "毒魚を出す" : `${fishLabel}を出す`;
+  const ownPoisonRisk = card.type === "fish" && activePoison?.ownerId === player.id;
+  const playTitle = ownPoisonRisk ? `${playLabel}（効果なし）` : playLabel;
+  const opponentCardLabel = card.type === "poison" ? `${player.name}の毒魚` : `${player.name}の${fishLabel}`;
   const stackBaseValue = card.type === "fish"
     ? card.schoolBaseValue ?? (card.value === 2 || card.value === 3 ? card.value : null)
     : null;
@@ -4999,11 +4835,23 @@ function renderHandSlot(player: Player, card: PlayerCard | null, slotIndex: numb
     player.faceUp.some((targetCard, targetSlotIndex) =>
       targetSlotIndex !== slotIndex && targetCard !== null && canStackFishCards(card, targetCard)
     );
-  const stackHint = card.type === "fish" && card.schoolSize === 2 && stackBaseValue !== null
-    ? `同じ${stackBaseValue}を追加すると、3匹・強さ${stackBaseValue * 3}の群れになります。`
-    : "同じ数字のカードへドラッグするか、Sキーで2匹の群れにできます。";
   const cardAction = canUse ? "play-card" : canStack ? "stack-only" : "play-card";
-  const cardActionLabel = canUse ? playLabel : canStack ? `群れを作る。${stackHint}` : playLabel;
+  const cardActionLabel = !isLocalPlayer
+    ? opponentCardLabel
+    : canUse
+      ? ownPoisonRisk
+        ? `${playLabel}。自分の毒魚直後のため効果なし`
+        : playLabel
+      : canStack
+        ? "群れを作る"
+        : playLabel;
+  const cardTitle = !isLocalPlayer
+    ? ""
+    : canUse
+      ? playTitle
+      : canStack
+        ? "群れを作る"
+        : unavailableTitle;
   const cardClass = getHandCardVisualClass(card);
   const cardButtonHtml = `
       <button
@@ -5017,7 +4865,7 @@ function renderHandSlot(player: Player, card: PlayerCard | null, slotIndex: numb
         ${canStack ? `data-stack-value="${stackBaseValue}"` : ""}
         ${canStack ? 'aria-keyshortcuts="S"' : ""}
         ${canUse || canStack ? "" : " disabled"}
-        title="${canUse ? `${playLabel}${canStack ? `。${stackHint}` : ""}` : canStack ? `待ち時間中でも群れを作れます。${stackHint}` : unavailableTitle}"
+        ${cardTitle ? `title="${cardTitle}"` : ""}
       >
         ${renderHandCardContents(card)}
       </button>
@@ -5038,23 +4886,22 @@ function renderEscapeCard(player: Player): string {
     !isGameOver;
   const canUse = canInteract && !isWaitingAfterOwnAction && !player.escapeUsedThisTry;
   const status = player.escapeUsedThisTry
-    ? "このトライでは使用済み"
+    ? "使用済み"
     : candidate
-      ? `${points}点を確定`
-      : "得点候補なし";
+      ? `${points}点`
+      : "候補なし";
   const title = player.escapeUsedThisTry
-    ? "次のトライまで逃げるカードは使えません。"
+    ? "使用済み"
     : isWaitingAfterOwnAction
-      ? "自分がカードを出した後の待ち時間です。"
+      ? "待機中"
       : !canInteract
-        ? "口が開いている自分の子の番に使えます。"
+        ? "操作できません"
         : candidate
-          ? `専用カードを使って${points}点を確定し、このトライを終えます。`
-          : "得点候補がないため効果はありませんが、このトライでは使用済みになります。";
+          ? `${points}点で逃げる`
+          : "候補なし";
 
   return `
-    <div class="escape-reserve" aria-label="山札とは別に置く逃げる専用カード">
-      <span class="escape-reserve-label">山札と別</span>
+    <div class="escape-reserve" aria-label="逃げるカード">
       <button
         class="escape-supply-card${player.escapeUsedThisTry ? " is-used" : ""}${candidate ? " has-target" : ""}"
         type="button"
@@ -5067,7 +4914,6 @@ function renderEscapeCard(player: Player): string {
         <span class="escape-supply-symbol" aria-hidden="true">逃</span>
         <strong>逃げる</strong>
         <small>${status}</small>
-        <i>1 TRY / 1回</i>
       </button>
     </div>
   `;
@@ -5078,13 +4924,4 @@ function getUsedPhysicalCardCount(player: Player): number {
     (total, card) => total + (card.type === "fish" ? card.schoolSize ?? 1 : 1),
     0
   );
-}
-
-function getMouthStatusLabel(): string {
-  if (isGameOver) return "ゲーム終了";
-  if (isMouthOpen) return "開いている";
-  if (biteAftermath === "poisoned") return "毒魚を食べて苦しんでいる";
-  if (biteAftermath === "fed") return "閉じている";
-  if (isTryEnded) return "トライ終了";
-  return "閉じている";
 }
