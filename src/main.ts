@@ -131,6 +131,14 @@ type StackDragState = {
   sourceButton: HTMLButtonElement;
   targetButton: HTMLButtonElement | null;
 };
+type HandRefillMotion = {
+  playerId: string;
+  slotIndex: number;
+  outgoingCard: PlayerCard;
+  incomingCardId: number | null;
+  startedAt: number | null;
+  timerId: number | null;
+};
 type OnlineLobbyMember = { playerId: string; name: string; isHost: boolean };
 type OnlineGameState = {
   playerCount: number;
@@ -240,6 +248,7 @@ const biteAftermathDurationMs = 1500;
 const mouthFishMotionDurationMs = 900;
 const ownActionWaitExtensionMs = 300;
 const ownActionWaitDurationMs = mouthFishMotionDurationMs + ownActionWaitExtensionMs;
+const handRefillMotionDurationMs = 760;
 const tutorialSteps: readonly TutorialStep[] = [
   {
     chapter: "子の冒険",
@@ -423,6 +432,7 @@ let tryReplayTimerId: number | null = null;
 let mouthFishMotion: MouthFishMotion | null = null;
 let mouthFishMotionTimerId: number | null = null;
 let mouthFishMotionStartedAt: number | null = null;
+const handRefillMotions = new Map<string, HandRefillMotion>();
 let actionWaitingPlayerIds = new Set<string>();
 let actionWaitTimerIds = new Map<string, number>();
 let isGameOver = false;
@@ -551,7 +561,10 @@ function renderLoadingScreen(loadedCount: number, totalCount: number): void {
     <main class="loading-screen" aria-labelledby="loading-title">
       ${renderOceanBackdrop()}
       <section class="loading-card">
-        <div class="ocean-whale loading-whale" aria-hidden="true"><span></span></div>
+        <div class="loading-creature-stage" aria-hidden="true">
+          <span class="loading-creature-glow"></span>
+          <img class="loading-whale-art" src="${whaleArtPaths.open}" alt="">
+        </div>
         <p class="start-eyebrow">DIVING INTO THE GAME</p>
         <h1 id="loading-title">ゲームを準備中</h1>
         <p class="loading-message" role="status" aria-live="polite">海の仲間を呼んでいます… ${progress}%</p>
@@ -571,6 +584,7 @@ appRoot.addEventListener("click", (event) => {
 
   const actionButton = target.closest<HTMLButtonElement>("button[data-action]");
   completeProtectedActivationClick(event, actionButton);
+  if (actionButton) finishHandRefillMotionForControl(actionButton);
 
   if (shouldSuppressCardClickAfterDrag(event, actionButton)) {
     event.preventDefault();
@@ -656,6 +670,7 @@ appRoot.addEventListener("pointerdown", (event) => {
   clearSuppressedCardClick(event.pointerId);
 
   const actionButton = target.closest<HTMLButtonElement>("button[data-action]");
+  if (actionButton) finishHandRefillMotionForControl(actionButton);
   if (actionButton && shouldProtectActionControl(actionButton)) {
     beginProtectedPointer(event.pointerId, actionButton);
   }
@@ -744,6 +759,7 @@ appRoot.addEventListener("keydown", (event) => {
   const actionButton = event.target instanceof HTMLElement
     ? event.target.closest<HTMLButtonElement>("button[data-action]")
     : null;
+  if (actionButton) finishHandRefillMotionForControl(actionButton);
   if (activationCode && actionButton && shouldProtectActionControl(actionButton)) {
     beginProtectedKeyboard(activationCode, actionButton);
   }
@@ -1152,6 +1168,7 @@ function clearActiveGameForTitle(): void {
   clearBiteAftermath();
   clearTryReplay();
   clearMouthFishMotion();
+  clearHandRefillMotions();
   clearOwnActionWaits();
   destroyOnlineSession();
   hasStarted = false;
@@ -1517,6 +1534,7 @@ function resetTryBox(): void {
   clearBiteAftermath();
   clearTryReplay();
   clearMouthFishMotion();
+  clearHandRefillMotions();
   clearOwnActionWaits();
   nextSequence = 1;
   boxCards = [createBaitBoxCard()];
@@ -1696,6 +1714,7 @@ function playFish(player: Player, slotIndex: number): void {
   const card = useFaceUpCard(player, slotIndex);
 
   if (!card || card.type !== "fish") return;
+  queueHandRefillMotion(player.id, slotIndex, card, player.faceUp[slotIndex]?.id ?? null);
 
   const liveBeforeIds = new Set(getLiveMouthNumericCards().map((item) => item.boxId));
   const fishBoxCard: FishBoxCard = {
@@ -1803,6 +1822,7 @@ function playPoison(player: Player, slotIndex: number): void {
   const card = useFaceUpCard(player, slotIndex);
 
   if (!card || card.type !== "poison") return;
+  queueHandRefillMotion(player.id, slotIndex, card, player.faceUp[slotIndex]?.id ?? null);
 
   const previousPoison = activePoison;
 
@@ -2432,6 +2452,97 @@ function clearMouthFishMotion(): void {
   mouthFishMotionStartedAt = null;
 }
 
+function getHandRefillMotionKey(playerId: string, slotIndex: number): string {
+  return `${playerId}:${slotIndex}`;
+}
+
+function queueHandRefillMotion(
+  playerId: string,
+  slotIndex: number,
+  outgoingCard: PlayerCard,
+  incomingCardId: number | null
+): void {
+  const key = getHandRefillMotionKey(playerId, slotIndex);
+  const existingMotion = handRefillMotions.get(key);
+  if (
+    existingMotion?.outgoingCard.id === outgoingCard.id &&
+    existingMotion.incomingCardId === incomingCardId
+  ) return;
+
+  if (existingMotion?.timerId !== null && existingMotion?.timerId !== undefined) {
+    window.clearTimeout(existingMotion.timerId);
+  }
+  handRefillMotions.set(key, {
+    playerId,
+    slotIndex,
+    outgoingCard,
+    incomingCardId,
+    startedAt: null,
+    timerId: null
+  });
+}
+
+function clearHandRefillMotions(): void {
+  handRefillMotions.forEach((motion) => {
+    if (motion.timerId !== null) window.clearTimeout(motion.timerId);
+  });
+  handRefillMotions.clear();
+}
+
+function getHandRefillVisualState(
+  playerId: string,
+  slotIndex: number,
+  incomingCardId: number | null
+): { motion: HandRefillMotion; elapsedMs: number } | null {
+  const key = getHandRefillMotionKey(playerId, slotIndex);
+  const motion = handRefillMotions.get(key);
+  if (!motion) return null;
+
+  if (motion.incomingCardId !== incomingCardId || prefersReducedMotion()) {
+    if (motion.timerId !== null) window.clearTimeout(motion.timerId);
+    handRefillMotions.delete(key);
+    return null;
+  }
+
+  if (motion.startedAt === null) {
+    motion.startedAt = window.performance.now();
+    motion.timerId = window.setTimeout(() => {
+      if (handRefillMotions.get(key) !== motion) return;
+      handRefillMotions.delete(key);
+      motion.timerId = null;
+      render(false);
+    }, handRefillMotionDurationMs);
+  }
+
+  const elapsedMs = Math.max(0, window.performance.now() - motion.startedAt);
+  if (elapsedMs >= handRefillMotionDurationMs) {
+    if (motion.timerId !== null) window.clearTimeout(motion.timerId);
+    handRefillMotions.delete(key);
+    return null;
+  }
+  return { motion, elapsedMs };
+}
+
+function finishHandRefillMotionForControl(button: HTMLButtonElement): void {
+  if (!button.classList.contains("hand-refill-incoming")) return;
+
+  const playerId = button.dataset.playerId;
+  const slotIndex = Number(button.dataset.slotIndex);
+  if (playerId && Number.isInteger(slotIndex)) {
+    const key = getHandRefillMotionKey(playerId, slotIndex);
+    const motion = handRefillMotions.get(key);
+    if (motion?.timerId !== null && motion?.timerId !== undefined) window.clearTimeout(motion.timerId);
+    handRefillMotions.delete(key);
+  }
+
+  const slot = button.closest<HTMLElement>(".hand-slot");
+  slot?.querySelector(".hand-refill-outgoing")?.remove();
+  slot?.querySelector(".hand-refill-gap")?.remove();
+  slot?.classList.remove("is-hand-refilling");
+  slot?.style.removeProperty("--hand-refill-elapsed");
+  button.classList.remove("hand-refill-incoming");
+}
+
 function getMouthFishMotionElapsedMs(): number {
   if (!mouthFishMotion || mouthFishMotionStartedAt === null) return 0;
   // Full-board renders rebuild the actors, so resume their CSS motion instead of replaying it.
@@ -2579,7 +2690,31 @@ function broadcastOnlineState(): void {
   guestConnections.filter((connection) => connection.open).forEach((connection) => connection.send(message));
 }
 
+function queueHandRefillMotionFromOnlineState(state: OnlineGameState): void {
+  if (!hasStarted || !state.mouthFishMotion) return;
+
+  const enteringCard = state.boxCards.find((card) => card.boxId === state.mouthFishMotion?.enteringId);
+  if (!enteringCard || (enteringCard.type !== "fish" && enteringCard.type !== "poison")) return;
+
+  const previousPlayer = players.find((player) => player.id === enteringCard.ownerId);
+  const nextPlayer = state.players.find((player) => player.id === enteringCard.ownerId);
+  if (!previousPlayer || !nextPlayer) return;
+
+  const slotIndex = previousPlayer.faceUp.findIndex((card) => card?.id === enteringCard.sourceCardId);
+  if (slotIndex < 0) return;
+
+  const outgoingCard = previousPlayer.faceUp[slotIndex];
+  if (!outgoingCard) return;
+  queueHandRefillMotion(
+    previousPlayer.id,
+    slotIndex,
+    outgoingCard,
+    nextPlayer.faceUp[slotIndex]?.id ?? null
+  );
+}
+
 function applyOnlineState(state: OnlineGameState): void {
+  queueHandRefillMotionFromOnlineState(state);
   const previousMouthFishMotionId = mouthFishMotion?.enteringId ?? null;
   const previousMouthFishMotionStartedAt = mouthFishMotionStartedAt;
   playerCount = state.playerCount;
@@ -2838,14 +2973,26 @@ function renderStartScreen(): string {
     <main class="start-screen mode-screen">
       ${renderOceanBackdrop()}
       <section class="start-card mode-select-card" aria-labelledby="game-title">
-        <div class="ocean-whale mode-whale" aria-hidden="true"><span></span></div>
+        <div class="mode-hero-art" aria-hidden="true">
+          <span class="mode-hero-glow"></span>
+          <img src="${whaleArtPaths.fed}" alt="">
+        </div>
         <h1 id="game-title">口に入る</h1>
+        <p class="mode-heading">遊び方を選ぶ</p>
         <div class="mode-grid" aria-label="対戦モードを選択">
           <button class="mode-card mode-card-cpu" type="button" data-action="start-cpu">
-            <strong>CPUと対戦</strong>
+            <span class="mode-card-art" aria-hidden="true"><img src="${fishArtPaths[5]}" alt=""></span>
+            <span class="mode-card-copy">
+              <strong>CPUと対戦</strong>
+              <small>強さを選んですぐに遊ぶ</small>
+            </span>
           </button>
           <button class="mode-card mode-card-online" type="button" data-action="open-online-lobby">
-            <strong>友達とオンライン対戦</strong>
+            <span class="mode-card-art" aria-hidden="true"><img src="${fishArtPaths[3]}" alt=""></span>
+            <span class="mode-card-copy">
+              <strong>友達とオンライン対戦</strong>
+              <small>合言葉で部屋を作る・入る</small>
+            </span>
           </button>
         </div>
         <button class="tutorial-entry" type="button" data-action="open-tutorial">
@@ -4774,9 +4921,52 @@ function renderChildPanel(player: Player, index: number, variant: "opponent" | "
   `;
 }
 
+function getHandCardVisualClass(card: PlayerCard): string {
+  const isSchool = card.type === "fish" && card.schoolSize !== undefined;
+  return card.type === "poison"
+    ? "poison-hand-card"
+    : `fish-hand-card value-${card.value}${isSchool ? " is-school" : ""}`;
+}
+
+function renderHandCardContents(card: PlayerCard): string {
+  const isSchool = card.type === "fish" && card.schoolSize !== undefined;
+  const cardArtwork = card.type === "fish"
+    ? renderCardFishArtwork(card.schoolBaseValue ?? card.value, card.schoolSize)
+    : `<img class="card-fish-art is-poison-art" src="${poisonFishArtPath}" alt="" aria-hidden="true">`;
+  const mainMark = card.type === "poison"
+    ? '<span class="card-symbol poison-symbol" aria-hidden="true">&#9760;</span>'
+    : `<span class="card-value">${card.value}</span>`;
+  return `
+    ${isSchool ? '<span class="school-card-layer" aria-hidden="true"></span>' : ""}
+    ${cardArtwork}
+    ${mainMark}
+    ${isSchool ? `<span class="school-fish-count-badge" aria-hidden="true">${getSchoolVisualFishCount(card)}匹</span>` : ""}
+  `;
+}
+
+function renderHandRefillSlot(
+  visualState: { motion: HandRefillMotion; elapsedMs: number },
+  incomingCardHtml: string
+): string {
+  const elapsedMs = Math.min(handRefillMotionDurationMs, Math.round(visualState.elapsedMs));
+  return `
+    <div class="hand-slot is-hand-refilling" style="--hand-refill-elapsed: -${elapsedMs}ms">
+      <div class="play-card empty-card hand-refill-gap" aria-hidden="true"><span>カードを出した！</span></div>
+      <div class="play-card ${getHandCardVisualClass(visualState.motion.outgoingCard)} hand-refill-outgoing" aria-hidden="true">
+        ${renderHandCardContents(visualState.motion.outgoingCard)}
+      </div>
+      ${incomingCardHtml}
+    </div>
+  `;
+}
+
 function renderHandSlot(player: Player, card: PlayerCard | null, slotIndex: number): string {
+  const refillVisualState = getHandRefillVisualState(player.id, slotIndex, card?.id ?? null);
   if (!card) {
-    return '<div class="hand-slot"><div class="play-card empty-card"><span>空</span></div></div>';
+    const emptyCardHtml = `<div class="play-card empty-card${refillVisualState ? " hand-refill-incoming" : ""}"><span>空</span></div>`;
+    return refillVisualState
+      ? renderHandRefillSlot(refillVisualState, emptyCardHtml)
+      : `<div class="hand-slot">${emptyCardHtml}</div>`;
   }
 
   const isWaitingAfterOwnAction = isPlayerWaitingAfterOwnAction(player.id);
@@ -4798,7 +4988,6 @@ function renderHandSlot(player: Player, card: PlayerCard | null, slotIndex: numb
       : card.type === "poison"
         ? "毒魚を出す"
         : `${fishLabel}を出す`;
-  const isSchool = card.type === "fish" && card.schoolSize !== undefined;
   const stackBaseValue = card.type === "fish"
     ? card.schoolBaseValue ?? (card.value === 2 || card.value === 3 ? card.value : null)
     : null;
@@ -4815,17 +5004,10 @@ function renderHandSlot(player: Player, card: PlayerCard | null, slotIndex: numb
     : "同じ数字のカードへドラッグするか、Sキーで2匹の群れにできます。";
   const cardAction = canUse ? "play-card" : canStack ? "stack-only" : "play-card";
   const cardActionLabel = canUse ? playLabel : canStack ? `群れを作る。${stackHint}` : playLabel;
-  const cardClass = card.type === "poison"
-    ? "poison-hand-card"
-    : `fish-hand-card value-${card.value}${isSchool ? " is-school" : ""}`;
-  const valueLabel = card.type === "poison" ? "" : String(card.value);
-  const cardArtwork = card.type === "fish"
-    ? renderCardFishArtwork(card.schoolBaseValue ?? card.value, card.schoolSize)
-    : `<img class="card-fish-art is-poison-art" src="${poisonFishArtPath}" alt="" aria-hidden="true">`;
-  return `
-    <div class="hand-slot">
+  const cardClass = getHandCardVisualClass(card);
+  const cardButtonHtml = `
       <button
-        class="play-card ${cardClass}"
+        class="play-card ${cardClass}${refillVisualState ? " hand-refill-incoming" : ""}"
         type="button"
         data-action="${cardAction}"
         data-player-id="${player.id}"
@@ -4837,13 +5019,12 @@ function renderHandSlot(player: Player, card: PlayerCard | null, slotIndex: numb
         ${canUse || canStack ? "" : " disabled"}
         title="${canUse ? `${playLabel}${canStack ? `。${stackHint}` : ""}` : canStack ? `待ち時間中でも群れを作れます。${stackHint}` : unavailableTitle}"
       >
-        ${isSchool ? '<span class="school-card-layer" aria-hidden="true"></span>' : ""}
-        ${cardArtwork}
-        ${card.type === "poison" ? '<span class="card-symbol poison-symbol" aria-hidden="true">&#9760;</span>' : `<span class="card-value">${valueLabel}</span>`}
-        ${isSchool ? `<span class="school-fish-count-badge" aria-hidden="true">${getSchoolVisualFishCount(card)}匹</span>` : ""}
+        ${renderHandCardContents(card)}
       </button>
-    </div>
   `;
+  return refillVisualState
+    ? renderHandRefillSlot(refillVisualState, cardButtonHtml)
+    : `<div class="hand-slot">${cardButtonHtml}</div>`;
 }
 
 function renderEscapeCard(player: Player): string {
