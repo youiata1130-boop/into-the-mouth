@@ -310,7 +310,7 @@ const tutorialSteps: readonly TutorialStep[] = [
     chapter: "子の冒険",
     title: "食べられる前に逃げよう",
     dialogue: "食べられる前に逃げよう！",
-    helper: "獲物を捕まえた魚は、山札の隣にある専用の「逃げる」カードで逃げられます。1トライに1回だけ使えます。",
+    helper: "獲物を捕まえると、山札の隣にある「逃げる」カードが青く光ります。1トライに1回だけ使えます。",
     visual: "escape-ready",
     action: "escape"
   },
@@ -1868,9 +1868,15 @@ function escapeWithCard(playerId: string): void {
     return;
   }
 
-  player.escapeUsedThisTry = true;
-
   const target = findEscapeTarget(player.id);
+
+  if (!target) {
+    addLog(`${player.name} には、今は逃げられる魚がありません。`);
+    render();
+    return;
+  }
+
+  player.escapeUsedThisTry = true;
 
   const escapeCard: EscapeBoxCard = {
     boxId: nextBoxCardId++,
@@ -1878,16 +1884,10 @@ function escapeWithCard(playerId: string): void {
     ownerId: player.id,
     ownerName: player.name,
     sequence: nextSequence++,
-    successful: target !== null
+    successful: true
   };
 
   boxCards.push(escapeCard);
-
-  if (!target) {
-    addLog(`${player.name} は得点候補がない状態で逃げるカードを使いました。効果はなく、このトライでは使用済みになります。`);
-    render();
-    return;
-  }
 
   const total = sumCapturedIds(target.capturedIds, player.id);
   target.escaped = true;
@@ -4879,17 +4879,24 @@ function renderEscapeCard(player: Player): string {
   const isWaitingAfterOwnAction = isPlayerWaitingAfterOwnAction(player.id);
   const candidate = getPlayerCandidates(player.id).at(-1);
   const points = candidate ? sumCapturedIds(candidate.capturedIds, player.id) : 0;
-  const canInteract =
-    player.id === localPlayerId &&
+  const isAvailableToOwner =
     player.role === "child" &&
     isMouthOpen &&
-    !isGameOver;
-  const canUse = canInteract && !isWaitingAfterOwnAction && !player.escapeUsedThisTry;
+    !isGameOver &&
+    !isWaitingAfterOwnAction &&
+    !player.escapeUsedThisTry &&
+    candidate !== undefined;
+  const canInteract = player.id === localPlayerId && player.role === "child" && isMouthOpen && !isGameOver;
+  const canUse = canInteract && isAvailableToOwner;
   const status = player.escapeUsedThisTry
     ? "使用済み"
-    : candidate
-      ? `${points}点`
-      : "候補なし";
+    : isWaitingAfterOwnAction
+      ? "待機中"
+      : !isMouthOpen || isGameOver
+        ? "使用不可"
+        : candidate
+          ? `${points}点`
+          : "候補なし";
   const title = player.escapeUsedThisTry
     ? "使用済み"
     : isWaitingAfterOwnAction
@@ -4903,11 +4910,11 @@ function renderEscapeCard(player: Player): string {
   return `
     <div class="escape-reserve" aria-label="逃げるカード">
       <button
-        class="escape-supply-card${player.escapeUsedThisTry ? " is-used" : ""}${candidate ? " has-target" : ""}"
+        class="escape-supply-card ${isAvailableToOwner ? "is-available" : "is-unavailable"}${player.escapeUsedThisTry ? " is-used" : ""}"
         type="button"
         data-action="escape-card"
         data-player-id="${player.id}"
-        aria-label="逃げる専用カード。${status}。1トライに1回"
+        aria-label="${player.name}の逃げる専用カード。${isAvailableToOwner ? `${points}点で使用可能` : status}。1トライに1回"
         ${canUse ? "" : " disabled"}
         title="${title}"
       >
