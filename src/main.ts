@@ -18,6 +18,8 @@ import {
   sumCapturedIds as sumBoardCapturedIds
 } from "./game/rules";
 import { getAppRoot, getFocusedControlIdentity, restoreFocusedControl } from "./ui/dom";
+import { evaluateFlickGesture } from "./ui/flick-gesture";
+import type { FlickMissReason, FlickPoint } from "./ui/flick-gesture";
 import { InteractionRenderGate } from "./ui/interaction-render-gate";
 import type {
   BaitBoxCard,
@@ -62,6 +64,7 @@ type MouthFishMotion = {
   preyIds: number[];
 };
 type GameMode = "cpu" | "online";
+type CardControlMode = "tap" | "flick";
 type OnlineRole = "none" | "host" | "guest";
 type OnlineLobbyView = "choice" | "create" | "join";
 type CpuDifficulty = "easy" | "normal" | "hard" | "advanced" | "expert";
@@ -161,6 +164,23 @@ type StackDragState = {
   started: boolean;
   sourceButton: HTMLButtonElement;
   targetButton: HTMLButtonElement | null;
+};
+type FlickDragState = {
+  pointerId: number;
+  playerId: string;
+  slotIndex: number;
+  cardId: number;
+  stackValue: "2" | "3" | null;
+  startX: number;
+  startY: number;
+  started: boolean;
+  samples: FlickPoint[];
+  sourceButton: HTMLButtonElement;
+  targetButton: HTMLButtonElement | null;
+};
+type FlickFeedback = {
+  kind: "success" | "miss";
+  message: string;
 };
 type HandRefillMotion = {
   playerId: string;
@@ -280,6 +300,7 @@ const mouthFishMotionDurationMs = 900;
 const ownActionWaitExtensionMs = 300;
 const ownActionWaitDurationMs = mouthFishMotionDurationMs + ownActionWaitExtensionMs;
 const handRefillMotionDurationMs = 760;
+const flickTapTolerancePx = 22;
 const tutorialSteps: readonly TutorialStep[] = [
   {
     chapter: "子の冒険",
@@ -441,8 +462,10 @@ const tutorialSteps: readonly TutorialStep[] = [
 
 let hasStarted = false;
 let gameMode: GameMode = "cpu";
+let cardControlMode: CardControlMode = "tap";
 let modeSetupOpen = false;
 let pendingGameMode: GameMode = "cpu";
+let pendingCardControlMode: CardControlMode = "tap";
 let cpuDifficulty: CpuDifficulty = "normal";
 let onlineLobbyOpen = false;
 let onlineRole: OnlineRole = "none";
@@ -497,6 +520,11 @@ let gameEffectTimerId: number | null = null;
 let tryEndReason: TryEndReason | null = null;
 let tryStartScores: Record<string, number> = {};
 let stackDragState: StackDragState | null = null;
+let flickDragState: FlickDragState | null = null;
+let flickFeedback: FlickFeedback | null = null;
+let flickFeedbackTimerId: number | null = null;
+let flickViewportAlignmentKey: string | null = null;
+const flickFlightElements = new Set<HTMLElement>();
 const interactionRenderGate = new InteractionRenderGate();
 let deferredRenderFlushTimerId: number | null = null;
 const activationClickFallbackDurationMs = 500;
@@ -528,7 +556,8 @@ const simpleActions: Record<string, () => void> = {
   "tutorial-close-mouth": closeTutorialMouth,
   "tutorial-remove-poison": removeTutorialPoison,
   "close-tutorial": closeTutorial,
-  "start-cpu": () => openModeSetup("cpu"),
+  "start-cpu": () => openCpuModeSetup("tap"),
+  "start-flick": () => openCpuModeSetup("flick"),
   "back-to-title": returnToTitle,
   "open-online-lobby": openOnlineLobby,
   "choose-create-room": () => showOnlineLobbyView("create"),
@@ -706,7 +735,7 @@ appRoot.addEventListener("click", (event) => {
   if (!cardTarget) return;
 
   if (action === "play-card") {
-    playCard(cardTarget.playerId, cardTarget.slotIndex, cardTarget.cardId);
+    requestPlayCard(cardTarget.playerId, cardTarget.slotIndex, cardTarget.cardId);
   }
 });
 
@@ -714,12 +743,24 @@ appRoot.addEventListener("pointerdown", (event) => {
   const target = event.target;
   if (!(target instanceof HTMLElement)) return;
   if (event.pointerType === "mouse" && event.button !== 0) return;
+  if (
+    (flickDragState && flickDragState.pointerId !== event.pointerId) ||
+    (stackDragState && stackDragState.pointerId !== event.pointerId)
+  ) return;
   clearSuppressedCardClick(event.pointerId);
 
   const actionButton = target.closest<HTMLButtonElement>("button[data-action]");
   if (actionButton) finishHandRefillMotionForControl(actionButton);
   if (actionButton && shouldProtectActionControl(actionButton)) {
     beginProtectedPointer(event.pointerId, actionButton);
+  }
+
+  const flickButton = actionButton?.matches("button[data-flick-card]") ? actionButton : null;
+  const flickCardTarget = flickButton ? getCardActionTarget(flickButton) : null;
+  if (flickButton && flickCardTarget && !flickButton.disabled) {
+    cancelStackDrag();
+    beginFlickDrag(event, flickButton, flickCardTarget);
+    return;
   }
 
   const button = target.closest<HTMLButtonElement>("button[data-stack-value]");
@@ -744,6 +785,11 @@ appRoot.addEventListener("pointerdown", (event) => {
 });
 
 appRoot.addEventListener("pointermove", (event) => {
+  if (flickDragState?.pointerId === event.pointerId) {
+    updateFlickDrag(event);
+    return;
+  }
+
   const drag = stackDragState;
   if (!drag || event.pointerId !== drag.pointerId) return;
 
@@ -756,6 +802,11 @@ appRoot.addEventListener("pointermove", (event) => {
 });
 
 appRoot.addEventListener("pointerup", (event) => {
+  if (flickDragState?.pointerId === event.pointerId) {
+    finishFlickDrag(event);
+    return;
+  }
+
   const drag = stackDragState;
   if (!drag || event.pointerId !== drag.pointerId) return;
 
@@ -790,6 +841,7 @@ appRoot.addEventListener("pointerup", (event) => {
 });
 
 appRoot.addEventListener("pointercancel", (event) => {
+  if (flickDragState?.pointerId === event.pointerId) cancelFlickDrag();
   if (stackDragState?.pointerId === event.pointerId) cancelStackDrag();
 });
 
@@ -911,6 +963,282 @@ function getCardActionTarget(button: HTMLButtonElement): { playerId: string; slo
   return playerId && Number.isInteger(slotIndex) && Number.isInteger(cardId)
     ? { playerId, slotIndex, cardId }
     : null;
+}
+
+function beginFlickDrag(
+  event: PointerEvent,
+  button: HTMLButtonElement,
+  cardTarget: { playerId: string; slotIndex: number; cardId: number }
+): void {
+  cancelFlickDrag();
+  const stackValue = button.dataset.stackValue;
+  flickDragState = {
+    pointerId: event.pointerId,
+    playerId: cardTarget.playerId,
+    slotIndex: cardTarget.slotIndex,
+    cardId: cardTarget.cardId,
+    stackValue: stackValue === "2" || stackValue === "3" ? stackValue : null,
+    startX: event.clientX,
+    startY: event.clientY,
+    started: false,
+    samples: [{ x: event.clientX, y: event.clientY, time: event.timeStamp }],
+    sourceButton: button,
+    targetButton: null
+  };
+  button.setPointerCapture(event.pointerId);
+}
+
+function updateFlickDrag(event: PointerEvent): void {
+  const drag = flickDragState;
+  if (!drag || event.pointerId !== drag.pointerId) return;
+
+  const deltaX = event.clientX - drag.startX;
+  const deltaY = event.clientY - drag.startY;
+  if (!drag.started && Math.hypot(deltaX, deltaY) < 7) return;
+
+  drag.started = true;
+  event.preventDefault();
+  addFlickSample(drag, event);
+  drag.sourceButton.classList.add("is-flick-dragging");
+  drag.sourceButton.style.setProperty("--flick-dx", `${deltaX}px`);
+  drag.sourceButton.style.setProperty("--flick-dy", `${deltaY}px`);
+  drag.sourceButton.style.setProperty("--flick-rotate", `${Math.max(-11, Math.min(11, deltaX * 0.045))}deg`);
+  appRoot.querySelector(".board-screen")?.classList.add("is-flick-aiming");
+  setFlickStackDropTarget(getFlickStackDropTarget(event.clientX, event.clientY, drag));
+}
+
+function finishFlickDrag(event: PointerEvent): void {
+  const drag = flickDragState;
+  if (!drag || event.pointerId !== drag.pointerId) return;
+
+  if (!drag.started) {
+    cancelFlickDrag();
+    return;
+  }
+
+  event.preventDefault();
+  addFlickSample(drag, event);
+  const stackTargetButton = getFlickStackDropTarget(event.clientX, event.clientY, drag);
+  const stackTarget = stackTargetButton ? getStackCardIdentity(stackTargetButton) : null;
+  const sourceButton = drag.sourceButton;
+  suppressCardClickAfterDrag(event.pointerId, sourceButton);
+
+  if (stackTarget) {
+    const { playerId, slotIndex, cardId } = drag;
+    const sourceIdentity: StackCardIdentity | null = drag.stackValue
+      ? { playerId, slotIndex, cardId, stackValue: drag.stackValue }
+      : null;
+    const canStackNow =
+      sourceIdentity !== null &&
+      canCompleteFlickThrow(drag) &&
+      canStackCardIdentities(sourceIdentity, stackTarget);
+    cancelFlickDrag();
+    settleProtectedPointerWithoutClick(event.pointerId);
+    if (canStackNow) {
+      showFlickFeedback("success", "群れをつくった！");
+      requestStackCards(playerId, slotIndex, stackTarget.slotIndex, cardId, stackTarget.cardId);
+    } else {
+      showFlickFeedback("miss", "口が閉じました！次のチャンスを待とう");
+    }
+    return;
+  }
+
+  const catchZone = appRoot.querySelector<HTMLElement>(".flick-catch-zone");
+  const targetRect = catchZone?.getBoundingClientRect();
+  const evaluation = targetRect
+    ? evaluateFlickGesture(drag.samples, {
+        left: targetRect.left,
+        right: targetRect.right,
+        top: targetRect.top,
+        bottom: targetRect.bottom
+      })
+    : { accepted: false, reason: "missed-target" as const, projectedX: Number.NaN, speed: 0 };
+  const { playerId, slotIndex, cardId } = drag;
+
+  const releaseDistance = Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY);
+  if (evaluation.reason === "too-short" && releaseDistance <= flickTapTolerancePx) {
+    cancelFlickDrag();
+    settleProtectedPointerWithoutClick(event.pointerId);
+    requestPlayCard(playerId, slotIndex, cardId);
+    return;
+  }
+
+  if (evaluation.accepted && targetRect && canCompleteFlickThrow(drag)) {
+    animateFlickThrow(sourceButton, targetRect);
+    cancelFlickDrag();
+    settleProtectedPointerWithoutClick(event.pointerId);
+    showFlickFeedback("success", "ナイススロー！");
+    requestPlayCard(playerId, slotIndex, cardId);
+    return;
+  }
+
+  const missMessage = evaluation.accepted
+    ? "口が閉じました！次のチャンスを待とう"
+    : getFlickMissMessage(evaluation.reason);
+  cancelFlickDrag();
+  settleProtectedPointerWithoutClick(event.pointerId);
+  showFlickFeedback("miss", missMessage);
+}
+
+function addFlickSample(drag: FlickDragState, event: PointerEvent): void {
+  drag.samples.push({ x: event.clientX, y: event.clientY, time: event.timeStamp });
+  if (drag.samples.length > 16) drag.samples.splice(1, drag.samples.length - 16);
+}
+
+function getFlickStackDropTarget(
+  clientX: number,
+  clientY: number,
+  drag: FlickDragState
+): HTMLButtonElement | null {
+  if (!drag.stackValue) return null;
+  const sourceIdentity: StackCardIdentity = {
+    playerId: drag.playerId,
+    slotIndex: drag.slotIndex,
+    cardId: drag.cardId,
+    stackValue: drag.stackValue
+  };
+
+  return [...appRoot.querySelectorAll<HTMLButtonElement>("button[data-stack-value]")].find((button) => {
+    const identity = getStackCardIdentity(button);
+    if (!identity || button === drag.sourceButton || button.disabled) return false;
+    const rect = button.getBoundingClientRect();
+    return (
+      clientX >= rect.left &&
+      clientX <= rect.right &&
+      clientY >= rect.top &&
+      clientY <= rect.bottom &&
+      canStackCardIdentities(sourceIdentity, identity)
+    );
+  }) ?? null;
+}
+
+function canCompleteFlickThrow(drag: FlickDragState): boolean {
+  const player = getPlayer(drag.playerId);
+  const card = player.faceUp[drag.slotIndex];
+  return (
+    card?.id === drag.cardId &&
+    player.role === "child" &&
+    isMouthOpen &&
+    !isTryEnded &&
+    !isGameOver &&
+    !isPlayerWaitingAfterOwnAction(player.id)
+  );
+}
+
+function setFlickStackDropTarget(button: HTMLButtonElement | null): void {
+  const drag = flickDragState;
+  if (!drag || drag.targetButton === button) return;
+  drag.targetButton?.classList.remove("is-stack-target");
+  drag.targetButton = button;
+  drag.targetButton?.classList.add("is-stack-target");
+}
+
+function cancelFlickDrag(): void {
+  const drag = flickDragState;
+  if (!drag) return;
+  drag.sourceButton.classList.remove("is-flick-dragging");
+  drag.sourceButton.style.removeProperty("--flick-dx");
+  drag.sourceButton.style.removeProperty("--flick-dy");
+  drag.sourceButton.style.removeProperty("--flick-rotate");
+  drag.targetButton?.classList.remove("is-stack-target");
+  appRoot.querySelector(".board-screen")?.classList.remove("is-flick-aiming");
+  if (drag.sourceButton.hasPointerCapture(drag.pointerId)) {
+    drag.sourceButton.releasePointerCapture(drag.pointerId);
+  }
+  flickDragState = null;
+}
+
+function animateFlickThrow(button: HTMLButtonElement, targetRect: DOMRect): void {
+  if (prefersReducedMotion()) return;
+  const sourceRect = button.getBoundingClientRect();
+  const clone = button.cloneNode(true) as HTMLButtonElement;
+  const targetX = targetRect.left + targetRect.width / 2 - (sourceRect.left + sourceRect.width / 2);
+  const targetY = targetRect.top + targetRect.height / 2 - (sourceRect.top + sourceRect.height / 2);
+  clone.classList.remove("is-flick-dragging", "is-stack-target");
+  clone.classList.add("flick-flight-card");
+  clone.disabled = true;
+  clone.setAttribute("aria-hidden", "true");
+  clone.removeAttribute("data-action");
+  clone.style.left = `${sourceRect.left}px`;
+  clone.style.top = `${sourceRect.top}px`;
+  clone.style.width = `${sourceRect.width}px`;
+  clone.style.height = `${sourceRect.height}px`;
+  clone.style.setProperty("--flick-flight-x", `${targetX}px`);
+  clone.style.setProperty("--flick-flight-y", `${targetY}px`);
+  document.body.append(clone);
+  flickFlightElements.add(clone);
+  void clone.offsetWidth;
+  clone.classList.add("is-flying");
+  window.setTimeout(() => {
+    clone.remove();
+    flickFlightElements.delete(clone);
+  }, 520);
+}
+
+function getFlickMissMessage(reason: FlickMissReason | null): string {
+  if (reason === "too-short" || reason === "too-slow") return "もっと勢いをつけて上へ！";
+  if (reason === "wrong-direction") return "口に向かって上へフリック！";
+  return "惜しい！口の真ん中を狙おう";
+}
+
+function showFlickFeedback(kind: FlickFeedback["kind"], message: string): void {
+  if (flickFeedbackTimerId !== null) window.clearTimeout(flickFeedbackTimerId);
+  flickFeedback = { kind, message };
+  const feedbackElement = appRoot.querySelector<HTMLElement>(".flick-feedback");
+  if (feedbackElement) {
+    feedbackElement.className = `flick-feedback is-${kind}`;
+    feedbackElement.textContent = message;
+  }
+  flickFeedbackTimerId = window.setTimeout(() => {
+    flickFeedbackTimerId = null;
+    flickFeedback = null;
+    const currentElement = appRoot.querySelector<HTMLElement>(".flick-feedback");
+    if (currentElement) {
+      currentElement.className = "flick-feedback";
+      currentElement.textContent = "";
+    }
+  }, 1650);
+}
+
+function clearFlickPresentation(): void {
+  cancelFlickDrag();
+  if (flickFeedbackTimerId !== null) window.clearTimeout(flickFeedbackTimerId);
+  flickFeedbackTimerId = null;
+  flickFeedback = null;
+  flickViewportAlignmentKey = null;
+  flickFlightElements.forEach((element) => element.remove());
+  flickFlightElements.clear();
+}
+
+function scheduleFlickViewportAlignment(): void {
+  if (cardControlMode !== "flick" || !hasStarted || tutorialStep !== null) return;
+  const alignmentKey = `${completedParentRounds}:${currentTry}:${parentIndex}`;
+  if (flickViewportAlignmentKey === alignmentKey) return;
+  flickViewportAlignmentKey = alignmentKey;
+
+  window.requestAnimationFrame(() => {
+    const catchZone = appRoot.querySelector<HTMLElement>(".flick-catch-zone");
+    const selfSeat = appRoot.querySelector<HTMLElement>(".board-screen .self-seat");
+    if (!catchZone || !selfSeat) {
+      if (window.scrollY > 0) window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+      return;
+    }
+
+    const catchRect = catchZone.getBoundingClientRect();
+    const selfRect = selfSeat.getBoundingClientRect();
+    const viewportPadding = 16;
+    const visibleTop = Math.min(catchRect.top, selfRect.top);
+    const visibleBottom = Math.max(catchRect.bottom, selfRect.bottom);
+    if (visibleTop >= viewportPadding && visibleBottom <= window.innerHeight - viewportPadding) return;
+
+    const documentTop = visibleTop + window.scrollY;
+    const documentBottom = visibleBottom + window.scrollY;
+    const contentHeight = documentBottom - documentTop;
+    const nextScrollY = contentHeight <= window.innerHeight - viewportPadding * 2
+      ? documentTop - (window.innerHeight - contentHeight) / 2
+      : documentTop - viewportPadding;
+    window.scrollTo({ top: Math.max(0, nextScrollY), left: 0, behavior: "auto" });
+  });
 }
 
 function getStackCardIdentity(button: HTMLButtonElement): StackCardIdentity | null {
@@ -1101,6 +1429,8 @@ function clearDeferredRenderFlushTimer(): void {
 }
 
 function releaseProtectedInteractions(): void {
+  cancelFlickDrag();
+  cancelStackDrag();
   suppressedDragClicks.forEach(({ timerId }) => window.clearTimeout(timerId));
   pointerClickFallbackTimerIds.forEach((timerId) => window.clearTimeout(timerId));
   keyboardClickFallbackTimerIds.forEach((timerId) => window.clearTimeout(timerId));
@@ -1111,6 +1441,17 @@ function releaseProtectedInteractions(): void {
   protectedKeyboardButtons.clear();
   interactionRenderGate.clearInteractions();
   scheduleDeferredRenderFlush();
+}
+
+function requestPlayCard(playerId: string, slotIndex: number, cardId: number): void {
+  if (onlineRole === "guest") {
+    sendOnlineMessage({ type: "action", action: "play-card", playerId, slotIndex, cardId });
+    startOwnActionWait(playerId, ownActionWaitDurationMs);
+    render();
+    return;
+  }
+
+  playCard(playerId, slotIndex, cardId);
 }
 
 function requestStackCards(
@@ -1188,9 +1529,15 @@ function setupNewGame(): void {
 
 function startGame(mode: GameMode): void {
   gameMode = mode;
+  cardControlMode = mode === "cpu" ? pendingCardControlMode : "tap";
   localPlayerId = humanPlayerId;
   hasStarted = true;
   setupNewGame();
+}
+
+function openCpuModeSetup(controlMode: CardControlMode): void {
+  pendingCardControlMode = controlMode;
+  openModeSetup("cpu");
 }
 
 function openModeSetup(mode: GameMode): void {
@@ -1217,6 +1564,7 @@ function clearActiveGameForTitle(): void {
   clearMouthFishMotion();
   clearHandRefillMotions();
   clearOwnActionWaits();
+  clearFlickPresentation();
   destroyOnlineSession();
   hasStarted = false;
   onlineLobbyOpen = false;
@@ -1225,6 +1573,8 @@ function clearActiveGameForTitle(): void {
 
 function openOnlineLobby(): void {
   gameMode = "online";
+  cardControlMode = "tap";
+  pendingCardControlMode = "tap";
   modeSetupOpen = false;
   onlineLobbyOpen = true;
   onlineLobbyView = "choice";
@@ -1583,6 +1933,7 @@ function resetTryBox(): void {
   clearMouthFishMotion();
   clearHandRefillMotions();
   clearOwnActionWaits();
+  clearFlickPresentation();
   nextSequence = 1;
   boxCards = [createBaitBoxCard()];
   players.forEach((player) => {
@@ -2753,6 +3104,12 @@ function queueHandRefillMotionFromOnlineState(state: OnlineGameState): void {
   );
 }
 
+function renderFlickFeedback(): string {
+  if (cardControlMode !== "flick") return "";
+  const className = flickFeedback ? ` is-${flickFeedback.kind}` : "";
+  return `<div class="flick-feedback${className}" role="status" aria-live="polite" aria-atomic="true">${flickFeedback ? escapeHtml(flickFeedback.message) : ""}</div>`;
+}
+
 function applyOnlineState(state: OnlineGameState): void {
   queueHandRefillMotionFromOnlineState(state);
   const previousMouthFishMotionId = mouthFishMotion?.enteringId ?? null;
@@ -2803,6 +3160,7 @@ function render(runGameSideEffects = true): void {
 
   interactionRenderGate.markRendered();
   clearDeferredRenderFlushTimer();
+  cancelFlickDrag();
   cancelStackDrag();
   const focusedControl = getFocusedControlIdentity();
 
@@ -2841,7 +3199,8 @@ function render(runGameSideEffects = true): void {
 
   appRoot.innerHTML = `
     <main class="app-shell">
-      <section class="board-screen${isHumanParent() ? " is-human-parent" : ""}" aria-label="ゲーム盤面">
+      <section class="board-screen${isHumanParent() ? " is-human-parent" : ""}${cardControlMode === "flick" ? " is-flick-mode" : ""}" aria-label="ゲーム盤面">
+        ${renderFlickFeedback()}
         ${renderGameEffect()}
         <section class="top-seats" aria-label="他の子プレイヤー"${isTryEnded ? " inert" : ""}>
           <div class="opponent-grid">
@@ -2902,6 +3261,7 @@ function render(runGameSideEffects = true): void {
             `
             : `
               <section class="setup-bar compact-setup" aria-label="ゲーム設定">
+                ${cardControlMode === "flick" ? '<strong class="flick-mode-chip">フリック操作</strong>' : ""}
                 <label>
                   <span>人数</span>
                   <select name="playerCount" ${isMouthOpen ? " disabled" : ""}>
@@ -2938,6 +3298,8 @@ function render(runGameSideEffects = true): void {
     restoreFocusedControl(appRoot, focusedControl);
   }
 
+  scheduleFlickViewportAlignment();
+
   if (shouldRunGameSideEffects) {
     broadcastOnlineState();
     scheduleNpcAutomation();
@@ -2945,15 +3307,17 @@ function render(runGameSideEffects = true): void {
 }
 
 function renderPlayerCountScreen(): string {
-  const modeLabels: Record<GameMode, string> = {
-    cpu: "CPU対戦",
-    online: "オンライン対戦"
-  };
+  const modeLabel = pendingGameMode === "online"
+    ? "オンライン対戦"
+    : pendingCardControlMode === "flick"
+      ? "フリック対戦・実験モード"
+      : "CPU対戦";
   return `
     <main class="start-screen">
       <section class="start-card count-screen" aria-labelledby="count-title">
-        <p class="start-eyebrow">${modeLabels[pendingGameMode]}</p>
+        <p class="start-eyebrow">${modeLabel}</p>
         <h1 id="count-title">人数</h1>
+        ${pendingCardControlMode === "flick" ? '<p class="flick-setup-note"><strong>カードを口へ上にフリック！</strong><span>タップでも出せます。同じ魚2・3は横へ重ねると群れになります。</span></p>' : ""}
         ${renderPlayerCountOptions()}
         ${renderCpuDifficultyOptions()}
         <button class="primary-button count-confirm" type="button" data-action="confirm-player-count">${draftPlayerCount}人で開始</button>
@@ -3013,6 +3377,16 @@ function renderStartScreen(): string {
             <span class="mode-card-art" aria-hidden="true"><img src="${fishArtPaths[3]}" alt=""></span>
             <span class="mode-card-copy">
               <strong>オンライン対戦</strong>
+            </span>
+          </button>
+          <button class="mode-card mode-card-flick" type="button" data-action="start-flick">
+            <span class="mode-card-art" aria-hidden="true">
+              <img src="${fishArtPaths[4]}" alt="">
+              <span class="mode-flick-trail"><i></i></span>
+            </span>
+            <span class="mode-card-copy">
+              <small>実験モード</small>
+              <strong>フリック対戦</strong>
             </span>
           </button>
         </div>
@@ -5166,6 +5540,7 @@ function renderMouth(): string {
           ${renderMouthFishScene()}
         </div>
       </div>
+      ${cardControlMode === "flick" && !isHumanParent() ? '<div class="flick-catch-zone" aria-hidden="true"><span>ここへ！</span></div>' : ""}
       ${activePoison ? `<div class="cavity-meta"><span>毒魚 ${activePoison.ownerName}</span></div>` : ""}
       <div class="jaw jaw-bottom" aria-hidden="true">
         <span></span><span></span><span></span><span></span><span></span>
@@ -5474,6 +5849,7 @@ function renderChildPanel(player: Player, index: number, variant: "opponent" | "
           <p class="section-label">${label}</p>
           <h3>${renderPlayerIdentity(player)}</h3>
           ${isSelf && isWaitingAfterOwnAction ? '<span class="action-wait-badge" role="status">待機中</span>' : ""}
+          ${isSelf && cardControlMode === "flick" ? '<p class="flick-mode-instruction" id="flick-card-instructions"><span aria-hidden="true">↑</span><strong>口へフリック</strong><small>タップでもOK</small></p>' : ""}
         </div>
         <strong>${player.score}点</strong>
       </header>
@@ -5589,6 +5965,7 @@ function renderHandSlot(player: Player, card: PlayerCard | null, slotIndex: numb
         ? "群れを作る"
         : unavailableTitle;
   const cardClass = getHandCardVisualClass(card);
+  const isFlickEnabled = cardControlMode === "flick" && canUse;
   const cardButtonHtml = `
       <button
         class="play-card ${cardClass}${refillVisualState ? " hand-refill-incoming" : ""}"
@@ -5598,6 +5975,7 @@ function renderHandSlot(player: Player, card: PlayerCard | null, slotIndex: numb
         data-slot-index="${slotIndex}"
         data-card-id="${card.id}"
         aria-label="${cardActionLabel}"
+        ${isFlickEnabled ? 'data-flick-card="true" aria-describedby="flick-card-instructions"' : ""}
         ${canStack ? `data-stack-value="${stackBaseValue}"` : ""}
         ${canStack ? 'aria-keyshortcuts="S"' : ""}
         ${canUse || canStack ? "" : " disabled"}

@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0 --port 5173 --strictPort",
     "build": "tsc && vite build && node scripts/inline-dist.mjs",
+    "test:flick": "node scripts/test-flick-gesture.mjs",
     "preview": "vite preview --host 0.0.0.0 --port 4173 --strictPort"
   },
   "devDependencies": {
