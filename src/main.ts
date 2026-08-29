@@ -1082,7 +1082,6 @@ function finishFlickDrag(event: PointerEvent): void {
 
 function addFlickSample(drag: FlickDragState, event: PointerEvent): void {
   drag.samples.push({ x: event.clientX, y: event.clientY, time: event.timeStamp });
-  if (drag.samples.length > 16) drag.samples.splice(1, drag.samples.length - 16);
 }
 
 function getFlickStackDropTarget(
@@ -3317,7 +3316,7 @@ function renderPlayerCountScreen(): string {
       <section class="start-card count-screen" aria-labelledby="count-title">
         <p class="start-eyebrow">${modeLabel}</p>
         <h1 id="count-title">人数</h1>
-        ${pendingCardControlMode === "flick" ? '<p class="flick-setup-note"><strong>カードを口へ上にフリック！</strong><span>タップでも出せます。同じ魚2・3は横へ重ねると群れになります。</span></p>' : ""}
+        ${pendingCardControlMode === "flick" ? '<p class="flick-setup-note"><strong>カードを口の中央へフリック！</strong><span>中央を外れると失敗です。タップでも出せます。同じ魚2・3は横へ重ねると群れになります。</span></p>' : ""}
         ${renderPlayerCountOptions()}
         ${renderCpuDifficultyOptions()}
         <button class="primary-button count-confirm" type="button" data-action="confirm-player-count">${draftPlayerCount}人で開始</button>
@@ -5540,7 +5539,7 @@ function renderMouth(): string {
           ${renderMouthFishScene()}
         </div>
       </div>
-      ${cardControlMode === "flick" && !isHumanParent() ? '<div class="flick-catch-zone" aria-hidden="true"><span>ここへ！</span></div>' : ""}
+      ${cardControlMode === "flick" && !isHumanParent() ? '<div class="flick-catch-zone" aria-hidden="true"><span>中央へ！</span></div>' : ""}
       ${activePoison ? `<div class="cavity-meta"><span>毒魚 ${activePoison.ownerName}</span></div>` : ""}
       <div class="jaw jaw-bottom" aria-hidden="true">
         <span></span><span></span><span></span><span></span><span></span>
@@ -5849,7 +5848,7 @@ function renderChildPanel(player: Player, index: number, variant: "opponent" | "
           <p class="section-label">${label}</p>
           <h3>${renderPlayerIdentity(player)}</h3>
           ${isSelf && isWaitingAfterOwnAction ? '<span class="action-wait-badge" role="status">待機中</span>' : ""}
-          ${isSelf && cardControlMode === "flick" ? '<p class="flick-mode-instruction" id="flick-card-instructions"><span aria-hidden="true">↑</span><strong>口へフリック</strong><small>タップでもOK</small></p>' : ""}
+          ${isSelf && cardControlMode === "flick" ? '<p class="flick-mode-instruction" id="flick-card-instructions"><span aria-hidden="true">↑</span><strong>口の中央へ</strong><small>外れると失敗</small></p>' : ""}
         </div>
         <strong>${player.score}点</strong>
       </header>

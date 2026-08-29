@@ -49,28 +49,15 @@ export function evaluateFlickGesture(
   if (speed === 0 || upwardSpeed / speed < minimumUpwardShare) return miss("wrong-direction", speed);
 
   const targetWidth = Math.max(1, target.right - target.left);
-  const horizontalMargin = Math.max(18, targetWidth * 0.16);
-  const isAlreadyInside =
-    end.x >= target.left - horizontalMargin &&
-    end.x <= target.right + horizontalMargin &&
-    end.y >= target.top - 18 &&
-    end.y <= target.bottom + 18;
-
-  if (isAlreadyInside) {
-    return { accepted: true, reason: null, projectedX: end.x, speed };
-  }
-
-  const targetY = target.top + (target.bottom - target.top) * 0.58;
-  const totalDeltaY = end.y - start.y;
-  const crossingRatio = totalDeltaY === 0 ? -1 : (targetY - start.y) / totalDeltaY;
-  if (crossingRatio >= 0 && crossingRatio <= 1) {
-    const crossingX = start.x + (end.x - start.x) * crossingRatio;
-    const crossedTarget =
-      crossingX >= target.left - horizontalMargin &&
-      crossingX <= target.right + horizontalMargin;
-    return crossedTarget
-      ? { accepted: true, reason: null, projectedX: crossingX, speed }
-      : miss("missed-target", speed, crossingX);
+  const centralInset = targetWidth * 0.2;
+  const centralLeft = target.left + centralInset;
+  const centralRight = target.right - centralInset;
+  const targetY = target.top + (target.bottom - target.top) * 0.5;
+  const observedCrossing = evaluateObservedCrossing(samples, targetY, centralLeft, centralRight);
+  if (observedCrossing.observed) {
+    return observedCrossing.accepted
+      ? { accepted: true, reason: null, projectedX: observedCrossing.x, speed }
+      : miss("missed-target", speed, observedCrossing.x);
   }
 
   const projectionMs = (targetY - end.y) / velocityY;
@@ -81,8 +68,8 @@ export function evaluateFlickGesture(
 
   const projectedX = end.x + velocityX * projectionMs;
   const hitsTarget =
-    projectedX >= target.left - horizontalMargin &&
-    projectedX <= target.right + horizontalMargin;
+    projectedX >= centralLeft &&
+    projectedX <= centralRight;
 
   return hitsTarget
     ? { accepted: true, reason: null, projectedX, speed }
@@ -94,6 +81,52 @@ function findVelocityStart(samples: readonly FlickPoint[], minimumTime: number):
     if (samples[index].time >= minimumTime) return samples[index];
   }
   return samples.at(-2) ?? samples[0];
+}
+
+function evaluateObservedCrossing(
+  samples: readonly FlickPoint[],
+  targetY: number,
+  centralLeft: number,
+  centralRight: number
+): { observed: boolean; accepted: boolean; x: number } {
+  const centerX = (centralLeft + centralRight) / 2;
+  let observed = false;
+  let lastCrossingX = Number.NaN;
+
+  for (let index = 1; index < samples.length; index += 1) {
+    const previous = samples[index - 1];
+    const current = samples[index];
+    const deltaY = current.y - previous.y;
+
+    if (deltaY === 0) {
+      if (current.y !== targetY) continue;
+      observed = true;
+      const segmentLeft = Math.min(previous.x, current.x);
+      const segmentRight = Math.max(previous.x, current.x);
+      if (segmentRight >= centralLeft && segmentLeft <= centralRight) {
+        return {
+          observed: true,
+          accepted: true,
+          x: Math.max(segmentLeft, Math.min(centerX, segmentRight))
+        };
+      }
+      lastCrossingX = Math.abs(previous.x - centerX) <= Math.abs(current.x - centerX)
+        ? previous.x
+        : current.x;
+      continue;
+    }
+
+    const crossingRatio = (targetY - previous.y) / deltaY;
+    if (crossingRatio < 0 || crossingRatio > 1) continue;
+    observed = true;
+    const crossingX = previous.x + (current.x - previous.x) * crossingRatio;
+    if (crossingX >= centralLeft && crossingX <= centralRight) {
+      return { observed: true, accepted: true, x: crossingX };
+    }
+    lastCrossingX = crossingX;
+  }
+
+  return { observed, accepted: false, x: lastCrossingX };
 }
 
 function miss(reason: FlickMissReason, speed = 0, projectedX = Number.NaN): FlickEvaluation {

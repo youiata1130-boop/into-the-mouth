@@ -9701,11 +9701,25 @@ body {
   transition: opacity 160ms ease, transform 180ms ease, box-shadow 180ms ease;
 }
 
+.flick-catch-zone::before {
+  content: "";
+  position: absolute;
+  inset: 18% 20%;
+  border: 2px solid rgba(255, 251, 214, 0.96);
+  border-radius: 50%;
+  background: rgba(255, 230, 122, 0.1);
+  box-shadow:
+    0 0 0 5px rgba(255, 225, 112, 0.09),
+    inset 0 0 18px rgba(255, 241, 171, 0.14);
+}
+
 .mouth.is-open .flick-catch-zone {
   opacity: 0.54;
 }
 
 .flick-catch-zone > span {
+  position: relative;
+  z-index: 1;
   border: 1px solid rgba(255, 255, 255, 0.9);
   border-radius: 999px;
   padding: 5px 10px;

@@ -11,6 +11,7 @@ const { evaluateFlickGesture } = await import(`data:text/javascript;base64,${enc
 
 const mouth = { left: 50, right: 150, top: 300, bottom: 450 };
 const point = (x, y, time) => ({ x, y, time });
+const fastVertical = (x) => [point(x, 700, 0), point(x, 600, 100)];
 
 assert.equal(
   evaluateFlickGesture([point(100, 700, 0), point(100, 650, 60), point(100, 600, 100)], mouth).accepted,
@@ -46,6 +47,35 @@ assert.equal(
   evaluateFlickGesture([point(100, 700, 0), point(100, 240, 180)], mouth).accepted,
   true,
   "a fast gesture that crosses the mouth between samples should still be accepted"
+);
+
+assert.equal(evaluateFlickGesture(fastVertical(70), mouth).accepted, true, "the left edge of the center zone should count");
+assert.equal(evaluateFlickGesture(fastVertical(69.99), mouth).accepted, false, "a throw just left of center should miss");
+assert.equal(evaluateFlickGesture(fastVertical(130), mouth).accepted, true, "the right edge of the center zone should count");
+assert.equal(evaluateFlickGesture(fastVertical(130.01), mouth).accepted, false, "a throw just right of center should miss");
+
+assert.equal(
+  evaluateFlickGesture([point(55, 700, 0), point(55, 360, 100)], mouth).accepted,
+  false,
+  "releasing inside the mouth edge without crossing its center should miss"
+);
+
+assert.equal(
+  evaluateFlickGesture([point(40, 700, 0), point(140, 240, 180)], mouth).accepted,
+  true,
+  "a diagonal trajectory that crosses the mouth center should be accepted"
+);
+
+assert.equal(
+  evaluateFlickGesture([point(40, 700, 0), point(40, 400, 60), point(140, 240, 100)], mouth).accepted,
+  false,
+  "a curved trajectory whose observed center-line crossing is off-center should miss"
+);
+
+assert.equal(
+  evaluateFlickGesture([point(40, 700, 0), point(100, 375, 60), point(40, 240, 100)], mouth).accepted,
+  true,
+  "an observed trajectory that passes through the center should be accepted"
 );
 
 console.log("flick gesture tests passed");
